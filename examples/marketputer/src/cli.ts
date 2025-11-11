@@ -98,18 +98,15 @@ program
           // Silently fail
         }
       }
-      // Support localhost for local testing
+      // Default to production unless explicitly set to localhost
       if (!apiBase) {
-        if (process.env.NODE_ENV === 'development' || process.env.USE_LOCALHOST === 'true') {
-          apiBase = 'http://localhost:3006'; // Agents API
-          console.log('🔧 Using localhost agents API (port 3006)');
-        } else {
-          apiBase = 'https://agents.api.memeputer.com';
-        }
+        apiBase = 'https://agents.api.memeputer.com';
       }
       
       if (apiBase.includes('localhost')) {
         console.log('🏠 Using LOCALHOST API');
+      } else {
+        console.log(`🌐 Using API: ${apiBase}`);
       }
       
       rpcUrl = rpcUrl || 'https://api.mainnet-beta.solana.com';

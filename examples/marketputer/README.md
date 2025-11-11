@@ -1,6 +1,6 @@
 # Marketputer
 
-An example application demonstrating how to compose multiple Memeputer agents into a complete marketing automation pipeline.
+An example application demonstrating how to compose multiple Memeputer agents into a complete marketing automation **pipeline**.
 
 ## What It Does
 
@@ -11,12 +11,24 @@ Marketputer orchestrates multiple AI agents to automatically:
 
 All powered by x402 micropayments on Solana - you only pay for what you use!
 
+## Pipeline vs Agent Economy
+
+**This example (Marketputer)** demonstrates a **pipeline pattern**:
+- A single wallet (yours) pays agents sequentially
+- Centralized control: Client → Agent 1 → Agent 2 → Agent 3
+- Good for: Orchestrated workflows, predictable costs
+
+**For agents paying other agents**, see the **[agent-economy](../agent-economy/README.md)** example:
+- Agents have their own wallets and pay each other
+- Decentralized economy: Agent → Agent → Agent
+- Good for: Autonomous agent networks, agent-to-agent economy
+
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js >= 18.0.0
-- Yarn or npm
+- pnpm >= 8.0.0
 - Solana wallet with SOL and USDC
 - Memeputer CLI installed (see main repo README)
 
@@ -24,13 +36,13 @@ All powered by x402 micropayments on Solana - you only pay for what you use!
 
 ```bash
 # Install dependencies
-yarn install
+pnpm install
 
 # Install Memeputer CLI locally (from monorepo root)
-yarn add file:../../packages/cli
+pnpm add file:../../packages/cli
 
 # Build
-yarn build
+pnpm build
 ```
 
 ### Setup
@@ -53,13 +65,16 @@ yarn build
 
 ```bash
 # Run a single campaign
-yarn start run --brand brands/brand-a/brand.config.json --budget 0.1
+pnpm run --brand brands/brand-a/brand.config.json --budget 0.1
 
 # Run with auto-approval (no prompts)
-yarn start run --brand brands/brand-a/brand.config.json --budget 0.1 --approve
+pnpm run:memeputer
 
-# Run in a loop
-yarn start run --brand brands/brand-a/brand.config.json --budget 1.0 --loop --delay 60000
+# Run PayAI brand
+pnpm run:payai
+
+# Run in a loop (custom command)
+pnpm run --brand brands/brand-a/brand.config.json --budget 1.0 --loop --delay 60000
 ```
 
 ### Options
@@ -94,12 +109,16 @@ See `brands/brand-a/brand.config.json` for a complete example.
 
 ## How It Works
 
-1. **TrendPuter** finds trending topics
-2. **BriefPuter** creates a creative brief from trends + brand profile
-3. **PFPputer** generates on-brand meme images
-4. **BroadcastPuter** posts to channels
+This is a **sequential pipeline** where your wallet pays each agent:
+
+1. **Your wallet** pays **TrendPuter** to find trending topics
+2. **Your wallet** pays **BriefPuter** to create a creative brief
+3. **Your wallet** pays **PFPputer** to generate on-brand meme images
+4. **Your wallet** pays **BroadcastPuter** to post to channels
 
 Each step uses x402 micropayments - you only pay for successful operations.
+
+**Note**: This is a pipeline pattern. For an example where agents pay other agents (agent-to-agent economy), see the [agent-economy](../agent-economy/README.md) example.
 
 ## Learn More
 

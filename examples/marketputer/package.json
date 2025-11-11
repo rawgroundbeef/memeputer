@@ -10,12 +10,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "tsx src/cli.ts",
-    "dev": "tsx watch src/cli.ts",
-    "test:trendputer": "tsx src/test-trendputer.ts",
-    "test:briefputer": "tsx src/test-briefputer.ts",
-    "test:pfpputer": "tsx src/test-pfpputer.ts"
+    "start": "pnpm exec tsx src/cli.ts",
+    "dev": "pnpm exec tsx watch src/cli.ts",
+    "run": "pnpm exec tsx src/cli.ts run",
+    "run:memeputer": "pnpm exec tsx src/cli.ts run --brand ./brands/brand-a/brand.config.json --budget 0.1 --approve",
+    "run:payai": "pnpm exec tsx src/cli.ts run --brand ./brands/brand-b/brand.config.json --budget 0.1 --approve"
   },
+  "packageManager": "pnpm@8.15.0",
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
     "axios": "^1.7.7",

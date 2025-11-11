@@ -277,13 +277,10 @@ export class MemeputerClient {
   private async pollImageStatus(statusUrl: string, maxAttempts: number = 120, delayMs: number = 1000): Promise<{ imageUrl: string; imageHash: string }> {
     const axios = (await import('axios')).default;
     
+    console.log(`   ⏳ Waiting for image generation...`);
+    
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        // Log every 5 attempts to reduce noise
-        if (attempt === 1 || attempt % 5 === 0 || attempt === maxAttempts) {
-          console.log(`   Polling attempt ${attempt}/${maxAttempts}...`);
-        }
-        
         const response = await axios.get(statusUrl, {
           timeout: 5000,
         });
@@ -292,17 +289,12 @@ export class MemeputerClient {
         const responseData = response.data;
         const data = responseData.data || responseData;
         
-        // Log status response for debugging (first attempt and when status changes)
-        if (attempt === 1 || (attempt % 10 === 0)) {
-          console.log(`   Status response: ${JSON.stringify(responseData).substring(0, 150)}...`);
-        }
-        
         const status = data.status;
         const imageUrl = data.imageUrl || data.image_url;
         
         // Check if image is ready
         if (status === 'completed' || status === 'done' || imageUrl) {
-          console.log(`   ✅ Image ready! Status: ${status}, URL: ${imageUrl?.substring(0, 50)}...`);
+          console.log(`   ✅ Image ready!`);
           return {
             imageUrl: imageUrl || '',
             imageHash: data.imageHash || data.image_hash || '',
@@ -314,10 +306,12 @@ export class MemeputerClient {
           throw new Error(`Image generation failed: ${data.error || data.message || 'Unknown error'}`);
         }
         
-        // Still processing
+        // Still processing - only log every 15 seconds
         if (status === 'processing' || status === 'pending' || status === 'in_progress') {
-          if (attempt === 1 || attempt % 10 === 0) {
-            console.log(`   ⏳ Still processing... (${data.progress || 'unknown'}%)`);
+          const elapsedSeconds = Math.floor(attempt * delayMs / 1000);
+          if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
+            const progress = data.progress ? ` (${data.progress}%)` : '';
+            console.log(`   ⏳ Still processing...${progress}`);
           }
           await new Promise(resolve => setTimeout(resolve, delayMs));
           continue;
@@ -325,7 +319,7 @@ export class MemeputerClient {
         
         // If status is unknown but imageUrl is present, use it
         if (imageUrl) {
-          console.log(`   ✅ Found imageUrl in status response`);
+          console.log(`   ✅ Image ready!`);
           return {
             imageUrl: imageUrl,
             imageHash: data.imageHash || data.image_hash || '',
@@ -337,13 +331,14 @@ export class MemeputerClient {
       } catch (error: any) {
         if (error.response?.status === 404) {
           // Status endpoint not found, might be a different format
-          console.log(`   ⚠️  Status endpoint returned 404, stopping polling`);
+          console.log(`   ⚠️  Status endpoint not found, stopping`);
           break;
         }
         if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-          // Connection issues, log but continue
-          if (attempt % 10 === 0) {
-            console.log(`   ⚠️  Connection issue (${error.code}), retrying...`);
+          // Connection issues, only log occasionally
+          const elapsedSeconds = Math.floor(attempt * delayMs / 1000);
+          if (elapsedSeconds > 0 && elapsedSeconds % 30 === 0) {
+            console.log(`   ⚠️  Connection issue, retrying...`);
           }
           await new Promise(resolve => setTimeout(resolve, delayMs));
           continue;
