@@ -1,0 +1,27 @@
+{
+  "name": "memeputer-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo for Memeputer packages",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && changeset publish",
+    "clean": "pnpm -r clean",
+    "link:cli": "pnpm --filter memeputer build && cd packages/cli && pnpm link --global"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "typescript": "^5.9.0",
+    "prettier": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
+
