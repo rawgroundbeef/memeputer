@@ -5,8 +5,14 @@ src/
 
 # Test files
 *.test.ts
+*.test.js
+*.test.d.ts
 *.spec.ts
+*.spec.js
+*.spec.d.ts
 vitest.config.ts
+dist/*.test.*
+dist/*.spec.*
 
 # Development files
 tsconfig.json
