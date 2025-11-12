@@ -2,6 +2,5 @@ node_modules/
 dist/
 .env
 *.log
-runs/
-.DS_Store
+wallet.json
 

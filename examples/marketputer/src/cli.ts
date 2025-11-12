@@ -1,329 +1,376 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { MemeputerClient } from './sdk/memeputer';
-import { Orchestrator } from './orchestrator';
+import { OrchestratorAgent } from './orchestrator-agent';
 import { BrandProfile, BrandProfileSchema } from './types';
 
 const program = new Command();
 
 program
   .name('marketputer')
-  .description('Autonomous trend→create→broadcast pipeline powered by Memeputer Agents + X402 pay-per-use on Solana')
+  .description('Orchestrator agent that coordinates and pays multiple specialized agents')
   .version('0.1.0');
 
 program
   .command('run')
-  .description('Run a marketing campaign')
-  .requiredOption('--brand <path>', 'Path to brand config JSON')
-  .requiredOption('--budget <sol>', 'Budget in SOL')
-  .option('--channels <list>', 'Comma-separated channels, e.g. tg,fc', 'tg')
-  .option('--sources <list>', 'Comma-separated sources, e.g. x,rss', 'x')
-  .option('--max-items <n>', 'Maximum number of trends to fetch', '20')
-  .option('--seed <n>', 'Deterministic seed for image generation', '42')
-  .option('--mock', 'Use mock mode (no API calls)', false)
-  .option('--approve', 'Auto-approve without prompt', false)
-  .option('--loop', 'Run campaigns in a loop', false)
-  .option('--delay <ms>', 'Delay between loop iterations in milliseconds', '30000')
-  .option('--max <n>', 'Maximum number of campaigns to run (0 = unlimited)', '0')
+  .description('Run autonomous agent economy: Find relevant topics and create a meme about them')
+  .option('--task <description>', 'DEPRECATED: Task is now fixed to "Find relevant topics and create a meme about them"')
+  .requiredOption('--budget <usdc>', 'Budget in USDC for the orchestrator agent')
+  .option('--brand <path>', 'Path to brand config JSON file (supports brandAgentId or brandProfile)')
+  .option('--agent-id <id>', 'Orchestrator agent ID (default: 1e7d0044-10c6-4036-9903-6ea995be82ec)')
+  .option('--orchestrator-wallet <path>', 'Path to orchestrator agent wallet JSON file (or set MEMEPUTER_WALLET in .env)')
+  .option('--api-base <url>', 'Memeputer API base URL (or set MEMEPUTER_API_BASE in .env)')
+  .option('--rpc-url <url>', 'Solana RPC URL (or set SOLANA_RPC_URL in .env)')
+  .option('--loop', 'Run continuously in a loop (press Ctrl+C to stop)')
+  .option('--loop-delay <seconds>', 'Delay between loop iterations in seconds (default: 60)', '60')
   .action(async (opts) => {
     try {
-      // Load brand profile
-      const brandPath = opts.brand;
-      const brandContent = readFileSync(brandPath, 'utf-8');
-      const brandData = JSON.parse(brandContent);
-      const brandProfile = BrandProfileSchema.parse(brandData);
+      const budgetUsdc = parseFloat(opts.budget);
+      const apiBase = opts.apiBase || process.env.MEMEPUTER_API_BASE || process.env.MEMEPUTER_API_URL || 'https://agents.api.memeputer.com';
       
-      // Resolve absolute path for reference image loading
-      const brandConfigPath = join(process.cwd(), brandPath);
-
-      // Parse options
-      const budgetSol = parseFloat(opts.budget);
-      const budgetLamports = Math.floor(budgetSol * 1e9); // Convert SOL to lamports
-      const channels = opts.channels.split(',').map((c: string) => c.trim()) as ('tg' | 'fc')[];
-      const sources = opts.sources.split(',').map((s: string) => s.trim().toUpperCase()) as ('DEXSCREENER' | 'BIRDEYE' | 'RSS' | 'X')[];
-      const maxItems = parseInt(opts.maxItems, 10);
-      const seed = opts.seed ? parseInt(opts.seed, 10) : undefined;
-      const mockMode = opts.mock || process.env.MOCK_MODE === 'true';
-      const loopMode = opts.loop || false;
-      const loopDelay = parseInt(opts.delay || '30000', 10);
-      const maxIterations = parseInt(opts.max || '0', 10);
-
-      // Load wallet path - try multiple sources
-      function loadWalletPath(): string | null {
-        // 1. Check .env variables first (for explicit override)
-        if (process.env.MEMEPUTER_WALLET || process.env.WALLET_SECRET_KEY) {
-          return process.env.MEMEPUTER_WALLET || process.env.WALLET_SECRET_KEY || null;
-        }
-
-        // 2. Check memeputer RC file (~/.memeputerrc)
+      // Fixed task: Find relevant topics and create a meme about them
+      const task = 'Find relevant topics and create a meme about them';
+      
+      if (opts.task) {
+        console.log('⚠️  Note: --task option is deprecated. Task is now fixed to: "Find relevant topics and create a meme about them"');
+      }
+      
+      // Load orchestrator wallet from local file
+      // Note: In open source, we can't expose wallet secret keys from the backend
+      // So we use a local wallet file that represents the orchestrator agent's wallet
+      let wallet: Keypair;
+      let walletPath = opts.orchestratorWallet;
+      
+      if (!walletPath) {
+        // Try env vars (check multiple common names)
+        walletPath = process.env.ORCHESTRATOR_WALLET || 
+                     process.env.MEMEPUTER_WALLET || 
+                     process.env.WALLET_SECRET_KEY;
+      }
+      
+      if (!walletPath) {
+        // Try RC file
         const rcPath = join(homedir(), '.memeputerrc');
         if (existsSync(rcPath)) {
           try {
             const rcContent = readFileSync(rcPath, 'utf-8');
             const rcConfig = JSON.parse(rcContent);
-            if (rcConfig.wallet) {
-              return rcConfig.wallet;
+            if (rcConfig.orchestratorWallet) {
+              walletPath = rcConfig.orchestratorWallet;
             }
           } catch {
-            // Silently fail, try next option
+            // Silently fail
           }
         }
-
-        // 3. Check default Solana wallet location
-        const defaultWalletPath = join(homedir(), '.config', 'solana', 'id.json');
-        if (existsSync(defaultWalletPath)) {
-          return defaultWalletPath;
-        }
-
-        return null;
-      }
-
-      // Load config - check RC file and env
-      let apiBase = process.env.MEMEPUTER_API_BASE || process.env.MEMEPUTER_API_URL;
-      let rpcUrl = process.env.SOLANA_RPC_URL;
-      const rcPath = join(homedir(), '.memeputerrc');
-      if (existsSync(rcPath)) {
-        try {
-          const rcContent = readFileSync(rcPath, 'utf-8');
-          const rcConfig = JSON.parse(rcContent);
-          if (!apiBase && rcConfig.apiUrl) apiBase = rcConfig.apiUrl;
-          if (!rpcUrl && rcConfig.rpcUrl) rpcUrl = rcConfig.rpcUrl;
-        } catch {
-          // Silently fail
-        }
-      }
-      // Default to production unless explicitly set to localhost
-      if (!apiBase) {
-        apiBase = 'https://agents.api.memeputer.com';
       }
       
-      if (apiBase.includes('localhost')) {
-        console.log('🏠 Using LOCALHOST API');
-      } else {
-        console.log(`🌐 Using API: ${apiBase}`);
+      if (!walletPath) {
+        console.error('❌ Error: Could not find orchestrator agent wallet');
+        console.error('\nPlease provide the orchestrator wallet using one of these methods:');
+        console.error('  1. Use --orchestrator-wallet <path> flag');
+        console.error('  2. Set MEMEPUTER_WALLET or ORCHESTRATOR_WALLET in .env file');
+        console.error('  3. Create ~/.memeputerrc with: {"orchestratorWallet": "/path/to/wallet.json"}');
+        console.error('\nNote: The orchestrator agent needs USDC to pay other agents!');
+        process.exit(1);
       }
-      
-      rpcUrl = rpcUrl || 'https://api.mainnet-beta.solana.com';
 
-      const walletPath = loadWalletPath();
-      let wallet: Keypair | null = null;
-      let connection: Connection | null = null;
+      // Expand tilde (~) in path to home directory
+      if (walletPath.startsWith('~/')) {
+        walletPath = walletPath.replace('~', homedir());
+      }
 
-      if (!mockMode) {
-        if (!walletPath) {
-          console.error('❌ Error: Could not find wallet configuration');
-          console.error('\nPlease set up your wallet using one of these methods:');
-          console.error('  1. Set MEMEPUTER_WALLET or WALLET_SECRET_KEY in .env file');
-          console.error('  2. Create ~/.memeputerrc with: {"wallet": "/path/to/wallet.json"}');
-          console.error('  3. Use default Solana wallet at ~/.config/solana/id.json');
-          console.error('\nOr use --mock flag for testing without a wallet');
-          console.error('Or run: memeputer balance (to set up memeputer config)');
-          process.exit(1);
-        }
-
-        try {
-          // Load wallet - can be either a JSON file path or a base58 encoded secret key
-          let walletData: number[] | Uint8Array;
-          try {
-            // Try as file path first
-            const walletContent = readFileSync(walletPath, 'utf-8');
-            walletData = JSON.parse(walletContent);
-          } catch {
-            // If not a file, try as base58 encoded string
-            walletData = bs58.decode(walletPath);
-          }
+      // Load wallet
+      try {
+        // First check if it's a file path
+        if (existsSync(walletPath)) {
+          const walletContent = readFileSync(walletPath, 'utf-8');
+          const walletData = JSON.parse(walletContent);
           wallet = Keypair.fromSecretKey(new Uint8Array(walletData));
-          connection = new Connection(rpcUrl, 'confirmed');
-        } catch (error) {
-          console.error('❌ Error loading wallet:', error instanceof Error ? error.message : error);
-          console.error('   Wallet should be a path to a JSON keypair file or base58 encoded secret key');
-          process.exit(1);
+        } else {
+          // Try as base58 encoded string or JSON string
+          try {
+            const walletData = JSON.parse(walletPath);
+            wallet = Keypair.fromSecretKey(new Uint8Array(walletData));
+          } catch {
+            wallet = Keypair.fromSecretKey(bs58.decode(walletPath));
+          }
         }
+      } catch (error) {
+        throw new Error(
+          `Failed to load wallet. ` +
+          `Path "${walletPath}" is neither a valid file path nor a base58-encoded secret key. ` +
+          `Original error: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      
+      // Get RPC URL
+      const rpcUrl = opts.rpcUrl || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+
+      // Load brand profile - default to memeputer.json if not specified
+      let brandProfile: BrandProfile | undefined;
+      const brandPathToLoad = opts.brand || 'memeputer.json';
+      
+      try {
+        let brandPath = brandPathToLoad.startsWith('~/') 
+          ? brandPathToLoad.replace('~', homedir())
+          : brandPathToLoad;
+        
+        if (!existsSync(brandPath)) {
+          // Try relative to brands directory
+          const brandsPath = join(process.cwd(), 'brands', brandPath);
+          if (existsSync(brandsPath)) {
+            const brandContent = readFileSync(brandsPath, 'utf-8');
+            brandProfile = BrandProfileSchema.parse(JSON.parse(brandContent));
+          } else {
+            // If no brand specified and memeputer.json doesn't exist, continue without brand
+            if (!opts.brand) {
+              brandProfile = undefined;
+            } else {
+              throw new Error(`Brand config not found: ${brandPath}`);
+            }
+          }
+        } else {
+          const brandContent = readFileSync(brandPath, 'utf-8');
+          brandProfile = BrandProfileSchema.parse(JSON.parse(brandContent));
+        }
+        
+        if (brandProfile) {
+          if (brandProfile.brandAgentId) {
+            console.log(`🎨 Brand: Using brand agent ${brandProfile.brandAgentId}`);
+          } else if (brandProfile.brandName) {
+            console.log(`🎨 Brand: ${brandProfile.brandName}`);
+          }
+        }
+      } catch (error) {
+        // Only show error if brand was explicitly specified
+        if (opts.brand) {
+          console.error(`⚠️  Failed to load brand config: ${error instanceof Error ? error.message : error}`);
+          console.error('   Continuing without brand profile...\n');
+        }
+        brandProfile = undefined;
       }
 
-      // Initialize client
-      const client = new MemeputerClient({
+      console.log('\n🤖 Agent Economy Example\n');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📋 Task:', task);
+      console.log('   🎯 Orchestrator will autonomously discover trending topics');
+      console.log('   🎯 and create a meme about them');
+      console.log('💰 Budget:', budgetUsdc, 'USDC');
+      if (brandProfile) {
+        if (brandProfile.brandAgentId) {
+          console.log('🎨 Brand Agent:', brandProfile.brandAgentId);
+        } else {
+          console.log('🎨 Brand:', brandProfile.brandName || 'Custom');
+        }
+      }
+      console.log('🔑 Wallet:', wallet.publicKey.toString());
+      console.log('🌐 API:', apiBase);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      const connection = new Connection(rpcUrl, 'confirmed');
+      
+      // Create orchestrator agent
+      const orchestrator = new OrchestratorAgent({
+        wallet,
+        connection,
         apiBase,
-        wallet: wallet || Keypair.generate(), // Generate dummy wallet for mock mode
-        connection: connection || new Connection(rpcUrl, 'confirmed'),
-        mockMode,
       });
 
-      // Initialize orchestrator
-      const orchestrator = new Orchestrator(client);
+      // Run the task
+      console.log('🚀 Starting execution...');
+      console.log('   The orchestrator agent will discover trending topics');
+      console.log('   and create a meme about them.');
+      console.log('\n📋 Execution Plan:');
+      console.log('   1. Get focus plan from Briefputer (identify keywords/topics)');
+      console.log('   2. Get trending topics from Trendputer (investigate 10 trends)');
+      console.log('   3. Generate creative brief from Briefputer (strategy & angle)');
+      console.log('   4. Enhance image prompt with Promptputer');
+      console.log('   5. Generate image from PFPputer');
+      console.log('   6. Describe image with ImageDescripterputer');
+      console.log('   7. Generate captions from Captionputer');
+      console.log('   8. Post to Telegram via Broadcastputer');
+      console.log('\n💸 Each step involves paying agents via x402 micropayments');
+      console.log('   All payments tracked with Solscan links\n');
 
-      console.log('\n🚀 Starting Marketputer Campaign\n');
-      if (brandProfile.brandAgentId) {
-        console.log(`Brand Agent ID: ${brandProfile.brandAgentId}`);
-      } else {
-        console.log(`Brand: ${brandProfile.brandName || 'Unknown'}`);
-      }
-      console.log(`Budget: ${budgetSol} SOL (${budgetLamports} lamports)`);
-      console.log(`Channels: ${channels.join(', ')}`);
-      console.log(`Sources: ${sources.join(', ')}`);
-      console.log(`Mode: ${mockMode ? 'MOCK' : 'LIVE'}`);
-      if (loopMode) {
-        console.log(`🔄 Loop Mode: ON`);
-        console.log(`   Delay: ${loopDelay}ms`);
-        if (maxIterations > 0) {
-          console.log(`   Max campaigns: ${maxIterations}`);
-        } else {
-          console.log(`   Max campaigns: unlimited (Ctrl+C to stop)`);
+      const loopEnabled = opts.loop || false;
+      const loopDelaySeconds = parseInt(opts.loopDelay || '60', 10);
+      let iteration = 0;
+
+      // Handle graceful shutdown
+      let shouldStop = false;
+      const stopHandler = () => {
+        console.log('\n\n🛑 Stopping loop... (Press Ctrl+C again to force exit)');
+        shouldStop = true;
+      };
+      process.on('SIGINT', stopHandler);
+      process.on('SIGTERM', stopHandler);
+
+      do {
+        iteration++;
+        if (loopEnabled && iteration > 1) {
+          console.log(`\n\n${'='.repeat(60)}`);
+          console.log(`🔄 Starting iteration #${iteration}`);
+          console.log(`${'='.repeat(60)}\n`);
         }
-      }
-      console.log('');
 
-      // Helper function to sleep
-      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-      // Helper function to run a single campaign
-      const runSingleCampaign = async (iteration?: number) => {
-        if (iteration !== undefined) {
-          console.log(`\n${'='.repeat(60)}`);
-          console.log(`🔄 CAMPAIGN ${iteration + 1}`);
-          console.log('='.repeat(60));
-        }
-
-        const result = await orchestrator.runCampaign({
+        const result = await orchestrator.executeTask({
+          task: task,
+          budgetUsdc,
           brandProfile,
-          budgetLamports,
-          channels,
-          sources,
-          maxItems,
-          seed,
-          mockMode,
-          brandConfigPath,
         });
-
-        // Save campaign result
-        const runsDir = join(process.cwd(), 'runs');
-        mkdirSync(runsDir, { recursive: true });
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const runFile = join(runsDir, `${timestamp}.json`);
-        writeFileSync(runFile, JSON.stringify(result.campaign, null, 2));
-
-        if (iteration === undefined) {
-          console.log(`\n📄 Campaign saved to: ${runFile}`);
-        } else {
-          console.log(`📄 Campaign ${iteration + 1} saved to: ${runFile}`);
-        }
 
         if (result.success) {
-          if (iteration === undefined) {
-            console.log('\n✅ Campaign completed successfully!');
-          } else {
-            console.log(`✅ Campaign ${iteration + 1} completed!`);
+          console.log('\n✅ Task completed successfully!');
+          console.log('\n📊 Summary:');
+          console.log(`   Total spent: ${result.totalSpent.toFixed(4)} USDC`);
+          console.log(`   Agents hired: ${result.agentsHired.length}`);
+          console.log(`   Payments made: ${result.payments.length}`);
+          
+          // Display detailed admin information
+          if (result.artifacts) {
+            // Trend information
+            if (result.artifacts.trends?.selectedTrend) {
+              const trend = result.artifacts.trends.selectedTrend;
+              console.log(`\n📈 Selected Trend:`);
+              console.log(`   Title: ${trend.title || 'N/A'}`);
+              console.log(`   Summary: ${trend.summary || 'N/A'}`);
+              if (trend.hashtags && trend.hashtags.length > 0) {
+                console.log(`   Hashtags: ${trend.hashtags.join(', ')}`);
+              }
+              if (trend.canonicalUrl) {
+                console.log(`   URL: ${trend.canonicalUrl}`);
+              }
+            }
+            
+            // Brief information
+            if (result.artifacts.brief) {
+              const brief = result.artifacts.brief;
+              console.log(`\n📝 Creative Brief:`);
+              console.log(`   Angle: ${brief.angle || 'N/A'}`);
+              console.log(`   Tone: ${brief.tone || 'N/A'}`);
+              if (brief.visualStyle && brief.visualStyle.length > 0) {
+                console.log(`   Visual Style: ${brief.visualStyle.join(', ')}`);
+              }
+              console.log(`   CTA: ${brief.callToAction || 'N/A'}`);
+              if (brief.negativeConstraints && brief.negativeConstraints.length > 0) {
+                console.log(`   Constraints: ${brief.negativeConstraints.join(', ')}`);
+              }
+            }
+            
+            // Image generation details
+            if (result.artifacts.imageGeneration) {
+              const img = result.artifacts.imageGeneration;
+              console.log(`\n🎨 Image Generation:`);
+              if (img.prompt) {
+                console.log(`   Prompt: ${img.prompt}`);
+              }
+              if (img.imageUrl) {
+                console.log(`   Image URL: ${img.imageUrl}`);
+              }
+              if (img.imageHash) {
+                console.log(`   Image Hash: ${img.imageHash}`);
+              }
+              if (img.seed) {
+                console.log(`   Seed: ${img.seed}`);
+              }
+              if (img.guidance) {
+                console.log(`   Guidance: ${img.guidance}`);
+              }
+            }
+            
+          // Image description
+          if (result.artifacts.imageDescription) {
+            const desc = result.artifacts.imageDescription;
+            console.log(`\n👁️  Image Description:`);
+            if (desc.description) {
+              const preview = desc.description.substring(0, 200);
+              console.log(`   ${preview}${desc.description.length > 200 ? '...' : ''}`);
+            }
           }
-          console.log(`📊 Summary:`);
-          console.log(`   Total receipts: ${result.campaign.x402Receipts.length}`);
-          const totalSpent = result.campaign.x402Receipts.reduce((sum, r) => sum + r.lamports, 0);
-          console.log(`   Total spent: ${totalSpent} lamports (${(totalSpent / 1e9).toFixed(4)} SOL)`);
-          if (result.campaign.posts.telegramLink) {
-            console.log(`   Telegram: ${result.campaign.posts.telegramLink}`);
+            
+          // Caption information
+          if (result.artifacts.caption) {
+            const cap = result.artifacts.caption;
+            console.log(`\n✍️  Caption (used):`);
+            console.log(`   Text: ${cap.text || 'N/A'}`);
+            if (cap.hashtags && cap.hashtags.length > 0) {
+              console.log(`   Hashtags: ${cap.hashtags.join(' ')}`);
+            }
+            if (cap.disclaimer) {
+              console.log(`   Disclaimer: ${cap.disclaimer}`);
+            }
+            if (cap.length) {
+              console.log(`   Length: ${cap.length}`);
+            }
           }
-          if (result.campaign.posts.farcasterLink) {
-            console.log(`   Farcaster: ${result.campaign.posts.farcasterLink}`);
+          
+          // Caption options
+          if (result.artifacts.captionOptions && result.artifacts.captionOptions.length > 1) {
+            console.log(`\n✍️  Caption Options (${result.artifacts.captionOptions.length} total):`);
+            result.artifacts.captionOptions.forEach((cap, idx) => {
+              console.log(`   ${idx + 1}. ${cap.text || 'N/A'}`);
+              if (cap.hashtags && cap.hashtags.length > 0) {
+                console.log(`      Hashtags: ${cap.hashtags.join(' ')}`);
+              }
+            });
           }
-          return true;
+            
+            // Posted links
+            if (result.artifacts.postedLinks) {
+              console.log(`\n📱 Posted Links:`);
+              if (result.artifacts.postedLinks.telegram) {
+                console.log(`   Telegram: ${result.artifacts.postedLinks.telegram}`);
+              }
+            }
+            
+            // Brand information
+            if (result.artifacts.brandProfile) {
+              const brand = result.artifacts.brandProfile;
+              console.log(`\n🎨 Brand Profile:`);
+              if (brand.brandAgentId) {
+                console.log(`   Brand Agent ID: ${brand.brandAgentId}`);
+              } else {
+                console.log(`   Brand Name: ${brand.brandName || 'N/A'}`);
+                console.log(`   Voice: ${brand.voice || brand.personality || 'N/A'}`);
+              }
+            }
+          }
+          
+          // Payment details
+          if (result.payments.length > 0) {
+            console.log(`\n💸 Payment Details:`);
+            result.payments.forEach((payment, idx) => {
+              console.log(`   ${idx + 1}. ${payment.agentId} (${payment.command}): ${payment.amount.toFixed(4)} USDC`);
+              console.log(`      TX: ${payment.txId}`);
+            });
+          }
+          
+          if (result.result) {
+            console.log(`\n📄 Result:`);
+            console.log(result.result);
+          }
         } else {
-          console.error(`\n❌ Campaign ${iteration !== undefined ? iteration + 1 : ''} failed: ${result.error}`);
-          return false;
-        }
-      };
-
-      // Run campaign(s)
-      if (loopMode) {
-        let iteration = 0;
-        let shouldStop = false;
-
-        // Handle Ctrl+C gracefully
-        process.on('SIGINT', () => {
-          console.log('\n\n🛑 Stopping loop...');
-          shouldStop = true;
-        });
-
-        while (!shouldStop) {
-          try {
-            const success = await runSingleCampaign(iteration);
-            
-            iteration++;
-            
-            if (maxIterations > 0 && iteration >= maxIterations) {
-              console.log(`\n✅ Completed ${maxIterations} campaigns`);
-              break;
-            }
-
-            if (!shouldStop) {
-              console.log(`\n⏳ Waiting ${loopDelay}ms before next campaign...`);
-              await sleep(loopDelay);
-            }
-          } catch (error) {
-            console.error('\n❌ Error in campaign:', error instanceof Error ? error.message : error);
-            if (!shouldStop) {
-              console.log(`⏳ Waiting ${loopDelay}ms before retrying...`);
-              await sleep(loopDelay);
-            }
+          console.error('\n❌ Task failed:', result.error);
+          if (!loopEnabled) {
+            process.exit(1);
           }
         }
-      } else {
-        const success = await runSingleCampaign();
-        if (!success) {
-          process.exit(1);
+
+        // If looping, wait before next iteration
+        if (loopEnabled && !shouldStop) {
+          console.log(`\n⏳ Waiting ${loopDelaySeconds} seconds before next iteration...`);
+          await new Promise(resolve => setTimeout(resolve, loopDelaySeconds * 1000));
         }
+      } while (loopEnabled && !shouldStop);
+
+      if (loopEnabled) {
+        console.log('\n✅ Loop stopped gracefully');
       }
-    } catch (error) {
-      console.error('❌ Error:', error instanceof Error ? error.message : error);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('mint-receipt')
-  .description('Mint a receipt NFT for a completed campaign')
-  .requiredOption('--run <path>', 'Path to campaign JSON file')
-  .action(async (opts) => {
-    try {
-      const runContent = readFileSync(opts.run, 'utf-8');
-      const campaign = JSON.parse(runContent);
-
-      const rpcUrl = process.env.SOLANA_RPC_URL;
-      const walletSecret = process.env.WALLET_SECRET_KEY;
-
-      if (!rpcUrl || !walletSecret) {
-        console.error('❌ Error: SOLANA_RPC_URL and WALLET_SECRET_KEY must be set in .env');
-        process.exit(1);
-      }
-
-      const apiBase = process.env.MEMEPUTER_API_BASE;
-      const apiKey = process.env.MEMEPUTER_API_KEY;
-
-      if (!apiBase || !apiKey) {
-        console.error('❌ Error: MEMEPUTER_API_BASE and MEMEPUTER_API_KEY must be set in .env');
-        process.exit(1);
-      }
-
-      const client = new MemeputerClient({
-        apiBase,
-        apiKey,
-        mockMode: false,
-      });
-
-      console.log('🎫 Minting receipt NFT...');
-      const response = await client.mintReceiptNft({
-        rpcUrl,
-        payerSecret: walletSecret,
-        campaign,
-      });
-
-      console.log(`✅ Receipt NFT minted!`);
-      console.log(`   Mint: ${response.mint}`);
-      console.log(`   Explorer: ${response.explorerUrl}`);
     } catch (error) {
       console.error('❌ Error:', error instanceof Error ? error.message : error);
       process.exit(1);

@@ -1,7 +1,7 @@
 {
   "name": "marketputer",
   "version": "0.1.0",
-  "description": "Autonomous trend→create→broadcast pipeline powered by Memeputer Agents + X402 pay-per-use on Solana",
+  "description": "Orchestrator agent that coordinates and pays multiple specialized agents using x402 micropayments",
   "license": "MIT",
   "type": "commonjs",
   "main": "dist/index.js",
@@ -12,9 +12,29 @@
     "build": "tsc -p tsconfig.json",
     "start": "pnpm exec tsx src/cli.ts",
     "dev": "pnpm exec tsx watch src/cli.ts",
-    "run": "pnpm exec tsx src/cli.ts run",
-    "run:memeputer": "pnpm exec tsx src/cli.ts run --brand ./brands/brand-a/brand.config.json --budget 0.1 --approve",
-    "run:payai": "pnpm exec tsx src/cli.ts run --brand ./brands/brand-b/brand.config.json --budget 0.1 --approve"
+    "autonomous": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json",
+    "x402": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json",
+    "solana": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json",
+    "trending": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json",
+    "memeputer": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json",
+    "payai": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/payai.json",
+    "loop": "pnpm exec tsx src/cli.ts run --budget 1.0 --loop",
+    "loop-payai": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/payai.json --loop",
+    "loop-memeputer": "pnpm exec tsx src/cli.ts run --budget 1.0 --brand brands/memeputer.json --loop",
+    "test": "pnpm exec tsx src/cli.ts run --budget 1.0",
+    "execute": "pnpm exec tsx src/cli.ts run",
+    "step": "pnpm exec tsx src/step-by-step.ts",
+    "step-list": "pnpm exec tsx src/step-by-step.ts list",
+    "step1": "pnpm exec tsx src/step-by-step.ts step1",
+    "step2": "pnpm exec tsx src/step-by-step.ts step2",
+    "step1-2": "pnpm exec tsx src/step-by-step.ts step1-2",
+    "step3": "pnpm exec tsx src/step-by-step.ts step3",
+    "step4": "pnpm exec tsx src/step-by-step.ts step4",
+    "step5": "pnpm exec tsx src/step-by-step.ts step5",
+    "step6": "pnpm exec tsx src/step-by-step.ts step6",
+    "test-broadcastputer": "pnpm exec tsx src/test-broadcastputer.ts",
+    "test-imagedescripterputer": "pnpm exec tsx src/test-imagedescripterputer.ts",
+    "test-captionputer": "pnpm exec tsx src/test-captionputer.ts"
   },
   "packageManager": "pnpm@8.15.0",
   "dependencies": {
@@ -23,9 +43,8 @@
     "bs58": "^6.0.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
-    "form-data": "^4.0.0",
     "memeputer": "^1.1.3",
-    "zod": "^3.23.8"
+    "ora": "^8.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.30",
@@ -36,8 +55,8 @@
     "memeputer",
     "x402",
     "solana",
-    "marketing",
     "agents",
-    "crypto"
+    "marketputer",
+    "autonomous-agents"
   ]
 }

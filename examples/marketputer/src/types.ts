@@ -17,6 +17,9 @@ export const BrandProfileSchema = z.object({
   primaryColor: z.string().nullable().optional(),
   emojiPack: z.array(z.string()).optional(), // Not needed if brandAgentId provided
   referenceImageUrls: z.array(z.string().url()).optional(), // Reference image URLs for PFPputer (must be publicly accessible)
+  captionPuterOptions: z.object({
+    promptTemplate: z.string().optional(), // Custom instructions for CaptionPuter prompt template
+  }).optional(), // CaptionPuter-specific options
 }).refine(
   (data) => data.brandAgentId || (data.brandName && (data.voice || data.personality)),
   {

@@ -27,7 +27,7 @@ export async function createPaymentTransaction(
   amountUsdc: number,
   scheme: string = "exact",
   network: string = "solana",
-): Promise<{ transaction: VersionedTransaction; signature: string }> {
+): Promise<{ transaction: VersionedTransaction; signature: string; txSignature?: string }> {
   try {
     const recipientPubkey = new PublicKey(recipient);
 
