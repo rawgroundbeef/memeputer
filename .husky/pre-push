@@ -19,5 +19,11 @@ pnpm test:run || {
   exit 1
 }
 
+# Run tests for marketputer example
+cd ../../examples/marketputer && pnpm test:run || {
+  echo "❌ Marketputer tests failed. Push aborted."
+  exit 1
+}
+
 echo "✅ All checks passed! Pushing..."
 

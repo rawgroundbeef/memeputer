@@ -1,19 +1,7 @@
-/**
- * Orchestrator - Coordinates and pays multiple specialized agents
- * 
- * This orchestrator demonstrates agent-to-agent economy:
- * - Receives a wallet with USDC balance
- * - Coordinates a fixed workflow of specialized agents
- * - Pays other agents from the provided wallet
- * - Tracks spending and manages budget
- * 
- * Current implementation: Simple keyword-based decision making
- * Future enhancement: Could use LLM reasoning for more sophisticated planning
- */
 import { Connection, Keypair } from '@solana/web3.js';
 import { Memeputer, PromptResult, getUsdcBalance } from '@memeputer/sdk';
 import { OrchestratorConfig, TaskRequest, TaskResult } from './types';
-import { CleanLogger } from './logger';
+import { CleanLogger } from './lib/logger';
 import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/utils';
 
 /**
@@ -21,9 +9,9 @@ import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/util
  * 
  * This demonstrates an agent-to-agent economy where:
  * - The orchestrator has its own wallet with USDC
- * - It autonomously decides which agents to hire
+ * - It coordinates a fixed workflow of specialized agents
  * - It pays those agents from its own wallet using x402 micropayments
- * - The orchestrator coordinates the workflow and manages the budget
+ * - The orchestrator tracks spending and manages the budget
  */
 export class Orchestrator {
   private memeputer: Memeputer;
@@ -58,21 +46,18 @@ export class Orchestrator {
     this.agentsHired = [];
     this.payments = [];
 
-    // Fixed task: Find relevant topics and create a meme about them
     const fixedTask = 'Find relevant topics and create a meme about them';
+    const brandProfile = request.brandProfile || {
+      brandName: 'Memeputer',
+      personality: 'fun, crypto-native, memes',
+      targetAudience: 'Solana degens',
+      voice: 'casual, humorous',
+      denyTerms: [],
+    };
 
     try {
       this.logger.section('Orchestrator Agent', `Task: "${fixedTask}" | Budget: ${request.budgetUsdc} USDC`);
 
-      // Step 1: Find trends (if needed)
-      // The orchestrator agent makes an autonomous decision about whether trends are needed
-      // and then evaluates trend quality before proceeding
-      let trends: any = null;
-      let selectedTrend: any = null;
-      let imagePrompt: string | null = null;
-      let imageHash: string | null = null;
-      let imageStatusUrl: string | null = null;
-      
       // Step 1: What's the Plan?
       this.logger.section('Step 1: What\'s the Plan?', 'briefputer');
       this.logger.startLoading('Processing...');
@@ -82,68 +67,12 @@ export class Orchestrator {
       if (focusPlan.keywords && focusPlan.keywords.length > 0) {
         this.logger.info(`Keywords: ${focusPlan.keywords.join(', ')}`);
       }
-      
+
       // Step 2: Discover Trends
-      this.logger.section('Step 2: Discover Trends', 'trendputer');
-      
-      // Get trends using TrendPuter's AI Reporter investigation (with web search)
-      // TrendPuter uses its reporter profile - no custom commands needed, just natural language prompts
-      const keywordsContext = focusPlan.keywords && focusPlan.keywords.length > 0
-        ? ` Focus on: ${focusPlan.keywords.join(', ')}.`
-        : '';
-      
-      // Build natural language prompt for TrendPuter
-      // Simple and direct - TrendPuter's profile handles the investigation
-      const trendPrompt = `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
-      
-      // Step 2: Discover Trends - Uses Trendputer to investigate news stories and return 10 trends as JSON
-      // No hardcoded amount - use remaining budget as safety limit
-      // Actual payment comes from 402 quote
-      const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
-      
-      // Parse trends response
-      try {
-        trends = JSON.parse(trendsResult.response);
-        this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
-        // Display trends in readable format
-        if (trends?.items && trends.items.length > 0) {
-          trends.items.forEach((trend: any, idx: number) => {
-            console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-            if (trend.summary) {
-              console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-            }
-          });
-        }
-      } catch (parseError) {
-        trends = { items: [] };
-        
-        // Try to extract JSON from markdown code blocks or other formats
-        const jsonMatch = trendsResult.response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || 
-                         trendsResult.response.match(/(\{[\s\S]*"items"[\s\S]*\})/);
-        if (jsonMatch) {
-          try {
-            trends = JSON.parse(jsonMatch[1]);
-            this.logger.result('✅', `Extracted ${trends?.items?.length || 0} trends from markdown`);
-            // Display trends
-            if (trends?.items && trends.items.length > 0) {
-              trends.items.forEach((trend: any, idx: number) => {
-                console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-                if (trend.summary) {
-                  console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-                }
-              });
-            }
-          } catch {
-            this.logger.warn('Failed to parse trends JSON');
-          }
-        } else {
-          this.logger.warn('No trends found in response');
-        }
-      }
-      
+      const trends = await this.discoverTrends(fixedTask, focusPlan.keywords || []);
+
       // Step 3: Select Best Trend
-      // THE WOW FACTOR: The orchestrator agent hires BriefPuter to evaluate trends using AI reasoning
-      // This demonstrates true autonomy - it uses AI reasoning (via another agent) instead of just heuristics
+      let selectedTrend: any = null;
       if (trends?.items && trends.items.length > 0) {
         this.logger.section('Step 3: Select Best Trend', 'briefputer');
         this.logger.startLoading('Processing...');
@@ -157,570 +86,90 @@ export class Orchestrator {
           }
         } else {
           this.logger.warn('No suitable trends found - proceeding without trend context');
-          trends = { items: [] };
         }
       } else {
         this.logger.warn('No trends returned - proceeding without trend context');
       }
 
       // Step 4: Create Creative Brief
-      let brief: any = null;
-      
-      this.logger.section('Step 4: Create Creative Brief', 'briefputer');
-      
-      // Use selected trend if available, otherwise use first trend or fallback
-      const trendItem = selectedTrend || trends?.items?.[0] || {
-        title: fixedTask,
-        summary: fixedTask,
-        source: 'USER',
-      };
-      
-      // Use brand profile if provided, otherwise use default
-      const brandProfile = request.brandProfile || {
-        brandName: 'Memeputer',
-        personality: 'fun, crypto-native, memes',
-        targetAudience: 'Solana degens',
-        voice: 'casual, humorous',
-        denyTerms: [],
-      };
-      
-      if (brandProfile.brandAgentId) {
-        this.logger.info(`Using brand agent: ${brandProfile.brandAgentId}`);
-      } else if (brandProfile.brandName) {
-        this.logger.info(`Using brand: ${brandProfile.brandName}`);
-      }
-      
-      // No hardcoded amount - actual payment comes from 402 quote
-      const briefPayload: any = {
-        trendItem,
-        policy: {
-          denyTerms: brandProfile.denyTerms || [],
-          requireDisclaimer: false,
-        },
-      };
-      
-      // If brandAgentId is provided, use it (backend will fetch brand profile)
-      // Otherwise, pass the brandProfile object
-      if (brandProfile.brandAgentId) {
-        briefPayload.brandAgentId = brandProfile.brandAgentId;
-        this.logger.info(`Sending brandAgentId to BriefPuter: ${brandProfile.brandAgentId}`);
-      } else {
-        briefPayload.brandProfile = brandProfile;
-        this.logger.info(`Sending brandProfile to BriefPuter: ${brandProfile.brandName || 'Custom'}`);
-      }
-      
-      // Step 4: Create Creative Brief - Uses Briefputer with generate_brief command
-      const briefResult = await this.hireAgent('briefputer', 'generate_brief', briefPayload);
-      
-      // Parse brief response
-      try {
-        const parsed = JSON.parse(briefResult.response);
-        brief = parsed.data || parsed;
-        this.logger.result('✅', 'Got creative brief');
-        
-        // Display brief details
-        if (brief?.brief) {
-          if (brief.brief.angle) {
-            this.logger.info(`   Angle: ${brief.brief.angle.substring(0, 120)}${brief.brief.angle.length > 120 ? '...' : ''}`);
-          }
-          if (brief.brief.tone) {
-            this.logger.info(`   Tone: ${brief.brief.tone}`);
-          }
-          if (brief.brief.visualStyle && brief.brief.visualStyle.length > 0) {
-            this.logger.info(`   Visual Style: ${brief.brief.visualStyle.join(', ')}`);
-          }
-          if (brief.brief.callToAction) {
-            this.logger.info(`   CTA: ${brief.brief.callToAction.substring(0, 80)}${brief.brief.callToAction.length > 80 ? '...' : ''}`);
-          }
-        }
-      } catch {
-        brief = { brief: null };
-        this.logger.warn('Failed to parse brief response');
-      }
+      const brief = await this.createBrief(selectedTrend, trends, fixedTask, brandProfile);
 
       // Step 5: Enhance Image Prompt
-      let imageUrl: string | null = null;
-      
       this.logger.section('Step 5: Enhance Image Prompt', 'promptputer');
-      
       const basePrompt = brief?.brief?.angle || fixedTask;
-      
-      // Step 5: Enhance Image Prompt - Uses Promptputer to enhance prompt with quality modifiers
-      // Ask PromptPuter to enhance the prompt for high-quality image generation
-      const enhancedPrompt = await this.enhanceImagePrompt(basePrompt);
-      imagePrompt = enhancedPrompt; // Store enhanced prompt for admin info
+      const imagePrompt = await this.enhanceImagePrompt(basePrompt);
       this.logger.result('✅', 'Prompt enhanced');
-      
+
       // Step 6: Generate Image
-      this.logger.section('Step 6: Generate Image', 'pfpputer');
-      
-      // Build PFP command with reference images if brand has them
-      let pfpCommand = `/pfp generate ${enhancedPrompt}`;
-      if (request.brandProfile?.referenceImageUrls && request.brandProfile.referenceImageUrls.length > 0) {
-        pfpCommand += ` --ref-images ${request.brandProfile.referenceImageUrls.join(' ')}`;
-        this.logger.info(`Using ${request.brandProfile.referenceImageUrls.length} reference image(s)`);
-      }
-      
-      // Step 6: Generate Image - Uses PFPputer with pfp command
-      // No hardcoded amount - actual payment comes from 402 quote
-      const imageResult = await this.hireAgent('pfpputer', 'pfp', {
-        message: pfpCommand,
-      });
-      
-      // Store status URL if present
-      if (imageResult.statusUrl) {
-        imageStatusUrl = imageResult.statusUrl;
-      }
-      
-      // Check for direct imageUrl in result (from API response)
-      imageUrl = imageResult.imageUrl || imageResult.mediaUrl || null;
-      
-      // Try parsing JSON response
-      if (!imageUrl) {
-        try {
-          const parsed = JSON.parse(imageResult.response);
-          imageUrl = parsed.imageUrl || parsed.image_url || parsed.data?.imageUrl || null;
-          imageHash = parsed.imageHash || parsed.image_hash || parsed.data?.imageHash || null;
-        } catch {
-          // If not JSON, check if response itself is a URL
-          if (imageResult.response.startsWith('http')) {
-            imageUrl = imageResult.response.trim();
-          }
-        }
-      }
-      
-      // Check for statusUrl (async image generation) - need to poll
-      if (!imageUrl && imageResult.statusUrl) {
-        this.logger.info('Image generation in progress...');
-        // Poll for image completion using SDK method
-        const statusResult = await this.memeputer.pollStatus(imageResult.statusUrl, {
-          maxAttempts: 120,
-          intervalMs: 1000,
-          onProgress: (attempt, _status) => {
-            // Calculate elapsed seconds: (attempt - 1) * intervalMs / 1000
-            // Since intervalMs is 1000ms, elapsedSeconds = attempt - 1
-            const elapsedSeconds = attempt - 1;
-            if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
-              this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed)`);
-            }
-          },
-        });
-        imageUrl = statusResult.imageUrl || statusResult.mediaUrl || null;
-        if (statusResult.status === 'failed') {
-          throw new Error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
-        }
-      }
-      
-      if (imageUrl) {
-        this.logger.result('✅', `Image generated: ${imageUrl.substring(0, 60)}...`);
-      } else {
-        this.logger.warn('No image URL found in response');
-      }
+      const { imageUrl, imageHash, imageStatusUrl } = await this.generateImage(imagePrompt, brandProfile);
 
       // Step 7: Describe Image
       let imageDescription: string | null = null;
       let imageDescriptionData: any = null;
-      
       if (!imageUrl) {
         this.logger.warn('Skipping image description - no image was generated');
       } else {
-        this.logger.section('Step 7: Describe Image', 'imagedescripterputer');
-        
-        try {
-          // Step 7: Describe Image - Uses ImageDescripterputer with describe_image command
-          // Send as JSON payload (not CLI format) since the agent expects parsed parameters
-          const descriptionResult = await this.hireAgent('imagedescripterputer', 'describe_image', {
-            imageUrl: imageUrl,
-            detailLevel: 'detailed',
-          });
-          
-          // Check if this is an async job (like PFPputer)
-          // statusUrl can be on the result object itself OR in the response JSON
-          let statusUrl: string | null = null;
-          
-          // First check: statusUrl on result object (like PFPputer)
-          if (descriptionResult.statusUrl) {
-            statusUrl = descriptionResult.statusUrl;
-          }
-          
-          // Second check: statusUrl in response JSON
-          if (!statusUrl) {
-            try {
-              const parsed = JSON.parse(descriptionResult.response);
-              statusUrl = parsed.statusUrl || parsed.data?.statusUrl || null;
-            } catch {
-              // Response might not be JSON yet
-            }
-          }
-          
-          // If we have a statusUrl, poll for completion
-          if (statusUrl) {
-            // Replace localhost URLs with actual API base, but preserve port if different
-            // Only replace if API base is NOT localhost (production), or if ports match
-            let pollingUrl = statusUrl;
-            const statusUrlMatch = statusUrl.match(/http:\/\/localhost:(\d+)/);
-            const apiBaseMatch = this.apiBase.match(/http:\/\/localhost:(\d+)/);
-            
-            if (statusUrlMatch && apiBaseMatch) {
-              // Both are localhost - only replace if ports match, otherwise keep original
-              if (statusUrlMatch[1] === apiBaseMatch[1]) {
-                pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
-              }
-              // If ports differ, keep the original URL (status endpoint might be on different port)
-            } else if (!statusUrlMatch && this.apiBase.includes('localhost')) {
-              // Status URL is not localhost but API base is - don't replace
-              pollingUrl = statusUrl;
-            } else if (statusUrlMatch && !this.apiBase.includes('localhost')) {
-              // Status URL is localhost but API base is production - replace hostname only
-              pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
-            }
-            
-            this.logger.info('Image description in progress...');
-            const polledResult = await this.pollImageDescription(pollingUrl);
-            
-            if (polledResult) {
-              // Parse the final description response
-              try {
-                const finalParsed = typeof polledResult === 'string' 
-                  ? JSON.parse(polledResult)
-                  : polledResult;
-                imageDescription = finalParsed.description || finalParsed.data?.description || null;
-                imageDescriptionData = finalParsed;
-                
-                if (imageDescription) {
-                  this.logger.result('✅', 'Got image description');
-                  const preview = imageDescription.substring(0, 120);
-                  this.logger.info(`   ${preview}${imageDescription.length > 120 ? '...' : ''}`);
-                }
-              } catch {
-                // If it's already a string description, use it
-                imageDescription = typeof polledResult === 'string' ? polledResult : null;
-                imageDescriptionData = { description: imageDescription };
-                
-                if (imageDescription) {
-                  this.logger.result('✅', 'Got image description');
-                  const preview = imageDescription.substring(0, 120);
-                  this.logger.info(`   ${preview}${imageDescription.length > 120 ? '...' : ''}`);
-                }
-              }
-            }
-          } else {
-            // Immediate response (synchronous) - try to parse description
-            try {
-              const parsed = JSON.parse(descriptionResult.response);
-              imageDescription = parsed.description || parsed.data?.description || null;
-              imageDescriptionData = parsed;
-              
-              if (imageDescription) {
-                this.logger.result('✅', 'Got image description');
-                const preview = imageDescription.substring(0, 120);
-                this.logger.info(`   ${preview}${imageDescription.length > 120 ? '...' : ''}`);
-              } else {
-                this.logger.warn('No description found in response');
-              }
-            } catch (parseError) {
-              // Response might be plain text indicating async processing
-              if (descriptionResult.response.includes('Analyzing') || descriptionResult.response.includes('processing')) {
-                this.logger.warn('Image description appears async but no statusUrl found');
-                this.logger.info('Check backend implementation - statusUrl should be returned');
-              } else {
-                imageDescription = null;
-                imageDescriptionData = null;
-                this.logger.warn(`Failed to parse image description: ${parseError instanceof Error ? parseError.message : parseError}`);
-              }
-            }
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          this.logger.error(`Failed to describe image: ${errorMessage}`);
-          imageDescription = null;
-        }
+        const descriptionResult = await this.describeImage(imageUrl);
+        imageDescription = descriptionResult.description;
+        imageDescriptionData = descriptionResult.data;
       }
 
       // Step 8: Write Captions
       let caption: string | null = null;
       let captionData: any = null;
       let captionOptions: any[] = [];
-      
       if (!imageDescription) {
         this.logger.warn('Skipping caption generation - no image description available');
       } else {
-        this.logger.section('Step 8: Write Captions', 'captionputer');
-        const captionTrendItem = trends?.items?.[0] || {
-          title: fixedTask,
-          summary: fixedTask,
-          source: 'USER',
-        };
-        
-        // Use same brand profile as brief
-        const captionBrandProfile = request.brandProfile || {
-          brandName: 'Memeputer',
-          personality: 'fun, crypto-native, memes',
-          targetAudience: 'Solana degens',
-          voice: 'casual, humorous',
-          denyTerms: [],
-        };
-        
-        // Request multiple caption variants (default: 3)
-        const numVariants = 3;
-        
-        try {
-          // Call CaptionPuter with image description and context
-          // CaptionPuter requires either brandAgentId or brandProfile
-          const captionPayload: any = {
-            imageDescription: imageDescription,
-            imagePrompt: imagePrompt || null,
-            trendItem: captionTrendItem,
-            brief: brief?.brief || null,
-            numVariants,
-          };
-          
-          // Add customInstructions from captionPuterOptions if provided
-          if (captionBrandProfile.captionPuterOptions?.promptTemplate) {
-            captionPayload.customInstructions = captionBrandProfile.captionPuterOptions.promptTemplate;
-          }
-          
-          // Add brandAgentId if available, otherwise add brandProfile
-          if (captionBrandProfile.brandAgentId) {
-            captionPayload.brandAgentId = captionBrandProfile.brandAgentId;
-          } else {
-            captionPayload.brandProfile = captionBrandProfile;
-          }
-          
-          // Step 8: Write Captions - Uses Captionputer with generate_captions command
-          const captionResult = await this.hireAgent('captionputer', 'generate_captions', captionPayload);
-          
-          try {
-            const parsed = JSON.parse(captionResult.response);
-            const captions = parsed.captions || parsed.data?.captions || [];
-            
-            // Debug: Log what we received
-            this.logger.info(`CaptionPuter response structure: ${JSON.stringify(Object.keys(parsed))}`);
-            this.logger.info(`Found ${captions.length} caption(s) in response`);
-            
-            if (captions.length > 0) {
-              captionOptions = captions;
-              caption = captions[0]?.text || null;
-              captionData = captions[0] || null; // Store first caption for posting
-              
-              this.logger.result('✅', `Got ${captions.length} caption option${captions.length > 1 ? 's' : ''}`);
-              
-              // Log all caption options
-              captions.forEach((cap: any, idx: number) => {
-                const preview = cap.text?.substring(0, 80) || 'N/A';
-                this.logger.info(`   Option ${idx + 1}: ${preview}${cap.text && cap.text.length > 80 ? '...' : ''}`);
-              });
-              
-              if (captions.length === 1 && numVariants > 1) {
-                this.logger.warn(`⚠️  Requested ${numVariants} captions but only received 1`);
-              }
-            } else {
-              this.logger.warn('No captions returned in response');
-              this.logger.info(`Full response: ${JSON.stringify(parsed).substring(0, 500)}`);
-            }
-          } catch (parseError) {
-            caption = null;
-            captionData = null;
-            captionOptions = [];
-            this.logger.warn(`Failed to parse caption response: ${parseError instanceof Error ? parseError.message : parseError}`);
-            this.logger.info(`Raw response: ${captionResult.response.substring(0, 500)}`);
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          this.logger.error(`Failed to generate captions: ${errorMessage}`);
-          caption = null;
-          captionOptions = [];
-        }
+        const captionResult = await this.writeCaptions(
+          imageDescription,
+          imagePrompt,
+          trends,
+          brief,
+          fixedTask,
+          brandProfile
+        );
+        caption = captionResult.caption;
+        captionData = captionResult.captionData;
+        captionOptions = captionResult.captionOptions;
       }
 
       // Step 9: Broadcast to Telegram
-      const postedLinks: { telegram?: string } = {};
-      
+      let postedLinks: { telegram?: string } = {};
       if (!imageUrl) {
         this.logger.warn('Skipping Telegram post - no image was generated');
       } else if (!caption) {
         this.logger.warn('Skipping Telegram post - no caption was generated');
       } else {
-        this.logger.section('Step 9: Broadcast to Telegram', 'broadcastputer');
-        // BroadcastPuter uses its own configured bot token, we just need chat ID
-        // Default to Memeputer chat if not specified
-        const telegramChatId = process.env.TELEGRAM_CHAT_ID || process.env.MEMEPUTER_TELEGRAM_CHAT_ID;
-        
-          if (telegramChatId) {
-            this.logger.info(`Posting to Telegram (Chat ID: ${telegramChatId})`);
-            
-            // Build enhanced caption with all options and context (prompt, trend, brief)
-            // If we have captionOptions, use them; otherwise fall back to single caption
-            const captionsToShow = captionOptions.length > 0 
-              ? captionOptions.map((cap: any) => ({
-                  text: cap.text || null,
-                  hashtags: cap.hashtags || [],
-                }))
-              : caption 
-                ? [{ text: caption, hashtags: captionData?.hashtags || [] }]
-                : null;
-            
-            const enhancedCaption = this.buildEnhancedCaption(
-              captionsToShow,
-              selectedTrend || trends?.items?.[0] || null,
-              brief?.brief || null,
-              imagePrompt || null
-            );
-            
-            try {
-              // Step 9: Broadcast to Telegram - Uses Broadcastputer with post_telegram command
-              // No hardcoded amount - actual payment comes from 402 quote
-              const telegramResult = await this.hireAgent('broadcastputer', 'post_telegram', {
-                chatId: telegramChatId,
-                caption: enhancedCaption,
-                imageUrl: imageUrl || '',
-                // botToken is optional - BroadcastPuter uses its own configured token
-              });
-              
-              try {
-                // Remove markdown code blocks if present
-                let responseText = telegramResult.response.trim();
-                if (responseText.startsWith('```')) {
-                  // Remove markdown code blocks (```json ... ```)
-                  responseText = responseText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-                }
-                
-                const parsed = JSON.parse(responseText);
-                // Extract messageLink from response (could be at root or in data object)
-                const messageLink = parsed.messageLink || parsed.data?.messageLink || null;
-                
-                if (messageLink && typeof messageLink === 'string') {
-                  postedLinks.telegram = messageLink;
-                  this.logger.result('✅', `Posted to Telegram: ${messageLink}`);
-                } else {
-                  // If no messageLink but response looks like JSON with a URL, try to extract it
-                  const responseStr = JSON.stringify(parsed);
-                  const urlMatch = responseStr.match(/https:\/\/t\.me\/[^\s"']+/);
-                  if (urlMatch) {
-                    postedLinks.telegram = urlMatch[0];
-                    this.logger.result('✅', `Posted to Telegram: ${urlMatch[0]}`);
-                  } else {
-                    this.logger.warn('Posted to Telegram but no message link found in response');
-                  }
-                }
-              } catch {
-                // Response might not be JSON - try to extract URL directly
-                const urlMatch = telegramResult.response.match(/https:\/\/t\.me\/[^\s"']+/);
-                if (urlMatch) {
-                  postedLinks.telegram = urlMatch[0];
-                  this.logger.result('✅', `Posted to Telegram: ${urlMatch[0]}`);
-                } else if (telegramResult.response.includes('http')) {
-                  postedLinks.telegram = telegramResult.response.trim();
-                  this.logger.result('✅', `Posted to Telegram: ${postedLinks.telegram}`);
-                } else {
-                  this.logger.warn('Unexpected response format from BroadcastPuter');
-                }
-              }
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-              this.logger.error(`Failed to post to Telegram: ${errorMessage}`);
-              if (errorMessage.includes('402') || errorMessage.includes('payment')) {
-                this.logger.info('This appears to be a payment issue - check BroadcastPuter\'s pricing');
-              } else if (errorMessage.includes('500') || errorMessage.includes('Internal')) {
-                this.logger.info('This appears to be a backend error - BroadcastPuter may be having issues');
-              }
-            }
-          } else {
-            this.logger.warn('Skipping Telegram post (chat ID not configured)');
-          }
-        }
-
-      // Compile result
-      const result: string[] = [];
-      if (trends) {
-        result.push(`Trends found: ${trends.items?.length || 0} items`);
-      }
-      if (brief) {
-        result.push(`Brief created: ${brief.brief?.angle || 'N/A'}`);
-      }
-      if (imageUrl) {
-        result.push(`🖼️  Image: ${imageUrl}`);
-      } else {
-        result.push(`⚠️  Image: Not generated or URL not found`);
-      }
-      if (caption) {
-        result.push(`Caption: ${caption}`);
-      }
-      if (postedLinks.telegram) {
-        result.push(`📱 Telegram: ${postedLinks.telegram}`);
+        postedLinks = await this.broadcastToTelegram(
+          imageUrl,
+          caption,
+          captionData,
+          captionOptions,
+          selectedTrend,
+          trends,
+          brief,
+          imagePrompt
+        );
       }
 
-      this.logger.spacer();
-      this.logger.section('✅ Task Completed', '');
-      this.logger.result('💰', `Total spent: ${this.totalSpent.toFixed(4)} USDC`);
-      this.logger.result('💵', `Remaining budget: ${(request.budgetUsdc - this.totalSpent).toFixed(4)} USDC`);
-      this.logger.result('👥', `Agents hired: ${this.agentsHired.length}`);
-      this.logger.result('💸', `Payments made: ${this.payments.length}`);
-
-      // Use the selected trend (already chosen in Step 1b)
-      const finalSelectedTrend = selectedTrend || trends?.items?.[0] || null;
-      
-      return {
-        success: true,
-        totalSpent: this.totalSpent,
-        agentsHired: [...new Set(this.agentsHired)],
-        payments: this.payments.map(p => ({
-          agentId: p.agentId,
-          command: p.command || 'unknown',
-          amount: p.amount,
-          txId: p.txId,
-        })),
-        result: result.join('\n'),
-        artifacts: {
-          trends: trends ? {
-            items: trends.items || [],
-            selectedTrend: finalSelectedTrend ? {
-              id: finalSelectedTrend.id,
-              title: finalSelectedTrend.title,
-              summary: finalSelectedTrend.summary,
-              source: finalSelectedTrend.source,
-              score: finalSelectedTrend.score,
-              hashtags: finalSelectedTrend.hashtags,
-              canonicalUrl: finalSelectedTrend.canonicalUrl,
-            } : undefined,
-          } : null,
-          brief: brief?.brief ? {
-            angle: brief.brief.angle,
-            tone: brief.brief.tone,
-            visualStyle: brief.brief.visualStyle,
-            callToAction: brief.brief.callToAction,
-            negativeConstraints: brief.brief.negativeConstraints,
-          } : null,
-          imageGeneration: imageUrl || imagePrompt ? {
-            prompt: imagePrompt || undefined,
-            imageUrl: imageUrl || undefined,
-            imageHash: imageHash || undefined,
-            statusUrl: imageStatusUrl || undefined,
-            seed: undefined, // PFPputer doesn't return seed currently
-            guidance: undefined, // PFPputer doesn't return guidance currently
-          } : undefined,
-          imageDescription: imageDescription ? {
-            description: imageDescription,
-            style: imageDescriptionData?.style || null,
-            composition: imageDescriptionData?.composition || null,
-            details: imageDescriptionData?.details || null,
-          } : null,
-          caption: captionData || caption ? {
-            text: caption || captionData?.text || null,
-            hashtags: captionData?.hashtags || [],
-            disclaimer: captionData?.disclaimer || null,
-            length: captionData?.length || null,
-          } : null,
-          captionOptions: captionOptions.length > 0 ? captionOptions.map((cap: any) => ({
-            text: cap.text || null,
-            hashtags: cap.hashtags || [],
-            disclaimer: cap.disclaimer || null,
-            length: cap.length || null,
-          })) : null,
-          postedLinks: Object.keys(postedLinks).length > 0 ? postedLinks : null,
-          brandProfile: request.brandProfile || null,
-        },
-      };
+      // Build and return result
+      return this.buildTaskResult(
+        request,
+        trends,
+        selectedTrend,
+        brief,
+        imageUrl,
+        imagePrompt,
+        imageHash,
+        imageStatusUrl,
+        imageDescription,
+        imageDescriptionData,
+        caption,
+        captionData,
+        captionOptions,
+        postedLinks
+      );
     } catch (error) {
       console.error('\n❌ Error during task execution:');
       console.error(error instanceof Error ? error.stack : error);
@@ -737,6 +186,580 @@ export class Orchestrator {
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
+  }
+
+  /**
+   * Step 2: Discover trends using TrendPuter
+   */
+  private async discoverTrends(fixedTask: string, keywords: string[]): Promise<any> {
+    this.logger.section('Step 2: Discover Trends', 'trendputer');
+    
+    const keywordsContext = keywords.length > 0
+      ? ` Focus on: ${keywords.join(', ')}.`
+      : '';
+    
+    const trendPrompt = `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
+    
+    const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
+    
+    // Parse trends response
+    try {
+      const trends = JSON.parse(trendsResult.response);
+      this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
+      if (trends?.items && trends.items.length > 0) {
+        trends.items.forEach((trend: any, idx: number) => {
+          console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
+          if (trend.summary) {
+            console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
+          }
+        });
+      }
+      return trends;
+    } catch {
+      // Try to extract JSON from markdown code blocks
+      const jsonMatch = trendsResult.response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || 
+                       trendsResult.response.match(/(\{[\s\S]*"items"[\s\S]*\})/);
+      if (jsonMatch) {
+        try {
+          const trends = JSON.parse(jsonMatch[1]);
+          this.logger.result('✅', `Extracted ${trends?.items?.length || 0} trends from markdown`);
+          if (trends?.items && trends.items.length > 0) {
+            trends.items.forEach((trend: any, idx: number) => {
+              console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
+              if (trend.summary) {
+                console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
+              }
+            });
+          }
+          return trends;
+        } catch {
+          this.logger.warn('Failed to parse trends JSON');
+        }
+      } else {
+        this.logger.warn('No trends found in response');
+      }
+      return { items: [] };
+    }
+  }
+
+  /**
+   * Step 4: Create creative brief using BriefPuter
+   */
+  private async createBrief(
+    selectedTrend: any,
+    trends: any,
+    fixedTask: string,
+    brandProfile: any
+  ): Promise<any> {
+    this.logger.section('Step 4: Create Creative Brief', 'briefputer');
+    
+    const trendItem = selectedTrend || trends?.items?.[0] || {
+      title: fixedTask,
+      summary: fixedTask,
+      source: 'USER',
+    };
+    
+    if (brandProfile.brandAgentId) {
+      this.logger.info(`Using brand agent: ${brandProfile.brandAgentId}`);
+    } else if (brandProfile.brandName) {
+      this.logger.info(`Using brand: ${brandProfile.brandName}`);
+    }
+    
+    const briefPayload: any = {
+      trendItem,
+      policy: {
+        denyTerms: brandProfile.denyTerms || [],
+        requireDisclaimer: false,
+      },
+    };
+    
+    if (brandProfile.brandAgentId) {
+      briefPayload.brandAgentId = brandProfile.brandAgentId;
+      this.logger.info(`Sending brandAgentId to BriefPuter: ${brandProfile.brandAgentId}`);
+    } else {
+      briefPayload.brandProfile = brandProfile;
+      this.logger.info(`Sending brandProfile to BriefPuter: ${brandProfile.brandName || 'Custom'}`);
+    }
+    
+    const briefResult = await this.hireAgent('briefputer', 'generate_brief', briefPayload);
+    
+    try {
+      const parsed = JSON.parse(briefResult.response);
+      const brief = parsed.data || parsed;
+      this.logger.result('✅', 'Got creative brief');
+      
+      if (brief?.brief) {
+        if (brief.brief.angle) {
+          this.logger.info(`   Angle: ${brief.brief.angle.substring(0, 120)}${brief.brief.angle.length > 120 ? '...' : ''}`);
+        }
+        if (brief.brief.tone) {
+          this.logger.info(`   Tone: ${brief.brief.tone}`);
+        }
+        if (brief.brief.visualStyle && brief.brief.visualStyle.length > 0) {
+          this.logger.info(`   Visual Style: ${brief.brief.visualStyle.join(', ')}`);
+        }
+        if (brief.brief.callToAction) {
+          this.logger.info(`   CTA: ${brief.brief.callToAction.substring(0, 80)}${brief.brief.callToAction.length > 80 ? '...' : ''}`);
+        }
+      }
+      return brief;
+    } catch {
+      this.logger.warn('Failed to parse brief response');
+      return { brief: null };
+    }
+  }
+
+  /**
+   * Step 6: Generate image using PFPputer
+   */
+  private async generateImage(
+    enhancedPrompt: string,
+    brandProfile: any
+  ): Promise<{ imageUrl: string | null; imageHash: string | null; imageStatusUrl: string | null }> {
+    this.logger.section('Step 6: Generate Image', 'pfpputer');
+    
+    let pfpCommand = `/pfp generate ${enhancedPrompt}`;
+    if (brandProfile?.referenceImageUrls && brandProfile.referenceImageUrls.length > 0) {
+      pfpCommand += ` --ref-images ${brandProfile.referenceImageUrls.join(' ')}`;
+      this.logger.info(`Using ${brandProfile.referenceImageUrls.length} reference image(s)`);
+    }
+    
+    const imageResult = await this.hireAgent('pfpputer', 'pfp', {
+      message: pfpCommand,
+    });
+    
+    let imageStatusUrl: string | null = null;
+    if (imageResult.statusUrl) {
+      imageStatusUrl = imageResult.statusUrl;
+    }
+    
+    let imageUrl = imageResult.imageUrl || imageResult.mediaUrl || null;
+    let imageHash: string | null = null;
+    
+    if (!imageUrl) {
+      try {
+        const parsed = JSON.parse(imageResult.response);
+        imageUrl = parsed.imageUrl || parsed.image_url || parsed.data?.imageUrl || null;
+        imageHash = parsed.imageHash || parsed.image_hash || parsed.data?.imageHash || null;
+      } catch {
+        if (imageResult.response.startsWith('http')) {
+          imageUrl = imageResult.response.trim();
+        }
+      }
+    }
+    
+    if (!imageUrl && imageResult.statusUrl) {
+      this.logger.info('Image generation in progress...');
+      const statusResult = await this.memeputer.pollStatus(imageResult.statusUrl, {
+        maxAttempts: 120,
+        intervalMs: 1000,
+        onProgress: (attempt, _status) => {
+          const elapsedSeconds = attempt - 1;
+          if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
+            this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed)`);
+          }
+        },
+      });
+      imageUrl = statusResult.imageUrl || statusResult.mediaUrl || null;
+      if (statusResult.status === 'failed') {
+        throw new Error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
+      }
+    }
+    
+    if (imageUrl) {
+      this.logger.result('✅', `Image generated: ${imageUrl.substring(0, 60)}...`);
+    } else {
+      this.logger.warn('No image URL found in response');
+    }
+    
+    return { imageUrl, imageHash, imageStatusUrl };
+  }
+
+  /**
+   * Step 7: Describe image using ImageDescripterputer
+   */
+  private async describeImage(imageUrl: string): Promise<{ description: string | null; data: any }> {
+    this.logger.section('Step 7: Describe Image', 'imagedescripterputer');
+    
+    try {
+      const descriptionResult = await this.hireAgent('imagedescripterputer', 'describe_image', {
+        imageUrl: imageUrl,
+        detailLevel: 'detailed',
+      });
+      
+      let statusUrl: string | null = null;
+      
+      if (descriptionResult.statusUrl) {
+        statusUrl = descriptionResult.statusUrl;
+      }
+      
+      if (!statusUrl) {
+        try {
+          const parsed = JSON.parse(descriptionResult.response);
+          statusUrl = parsed.statusUrl || parsed.data?.statusUrl || null;
+        } catch {
+          // Response might not be JSON yet
+        }
+      }
+      
+      if (statusUrl) {
+        let pollingUrl = statusUrl;
+        const statusUrlMatch = statusUrl.match(/http:\/\/localhost:(\d+)/);
+        const apiBaseMatch = this.apiBase.match(/http:\/\/localhost:(\d+)/);
+        
+        if (statusUrlMatch && apiBaseMatch) {
+          if (statusUrlMatch[1] === apiBaseMatch[1]) {
+            pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
+          }
+        } else if (statusUrlMatch && !this.apiBase.includes('localhost')) {
+          pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
+        }
+        
+        this.logger.info('Image description in progress...');
+        const polledResult = await this.pollImageDescription(pollingUrl);
+        
+        if (polledResult) {
+          try {
+            const finalParsed = typeof polledResult === 'string' 
+              ? JSON.parse(polledResult)
+              : polledResult;
+            const description = finalParsed.description || finalParsed.data?.description || null;
+            
+            if (description) {
+              this.logger.result('✅', 'Got image description');
+              const preview = description.substring(0, 120);
+              this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+            }
+            return { description, data: finalParsed };
+          } catch {
+            const description = typeof polledResult === 'string' ? polledResult : null;
+            if (description) {
+              this.logger.result('✅', 'Got image description');
+              const preview = description.substring(0, 120);
+              this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+            }
+            return { description, data: { description } };
+          }
+        }
+      } else {
+        try {
+          const parsed = JSON.parse(descriptionResult.response);
+          const description = parsed.description || parsed.data?.description || null;
+          
+          if (description) {
+            this.logger.result('✅', 'Got image description');
+            const preview = description.substring(0, 120);
+            this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+          } else {
+            this.logger.warn('No description found in response');
+          }
+          return { description, data: parsed };
+        } catch (parseError) {
+          if (descriptionResult.response.includes('Analyzing') || descriptionResult.response.includes('processing')) {
+            this.logger.warn('Image description appears async but no statusUrl found');
+            this.logger.info('Check backend implementation - statusUrl should be returned');
+          } else {
+            this.logger.warn(`Failed to parse image description: ${parseError instanceof Error ? parseError.message : parseError}`);
+          }
+          return { description: null, data: null };
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to describe image: ${errorMessage}`);
+      return { description: null, data: null };
+    }
+    
+    return { description: null, data: null };
+  }
+
+  /**
+   * Step 8: Write captions using Captionputer
+   */
+  private async writeCaptions(
+    imageDescription: string,
+    imagePrompt: string | null,
+    trends: any,
+    brief: any,
+    fixedTask: string,
+    brandProfile: any
+  ): Promise<{ caption: string | null; captionData: any; captionOptions: any[] }> {
+    this.logger.section('Step 8: Write Captions', 'captionputer');
+    
+    const captionTrendItem = trends?.items?.[0] || {
+      title: fixedTask,
+      summary: fixedTask,
+      source: 'USER',
+    };
+    
+    const numVariants = 3;
+    
+    try {
+      const captionPayload: any = {
+        imageDescription: imageDescription,
+        imagePrompt: imagePrompt || null,
+        trendItem: captionTrendItem,
+        brief: brief?.brief || null,
+        numVariants,
+      };
+      
+      if (brandProfile.captionPuterOptions?.promptTemplate) {
+        captionPayload.customInstructions = brandProfile.captionPuterOptions.promptTemplate;
+      }
+      
+      if (brandProfile.brandAgentId) {
+        captionPayload.brandAgentId = brandProfile.brandAgentId;
+      } else {
+        captionPayload.brandProfile = brandProfile;
+      }
+      
+      const captionResult = await this.hireAgent('captionputer', 'generate_captions', captionPayload);
+      
+      try {
+        const parsed = JSON.parse(captionResult.response);
+        const captions = parsed.captions || parsed.data?.captions || [];
+        
+        this.logger.info(`CaptionPuter response structure: ${JSON.stringify(Object.keys(parsed))}`);
+        this.logger.info(`Found ${captions.length} caption(s) in response`);
+        
+        if (captions.length > 0) {
+          const captionOptions = captions;
+          const caption = captions[0]?.text || null;
+          const captionData = captions[0] || null;
+          
+          this.logger.result('✅', `Got ${captions.length} caption option${captions.length > 1 ? 's' : ''}`);
+          
+          captions.forEach((cap: any, idx: number) => {
+            const preview = cap.text?.substring(0, 80) || 'N/A';
+            this.logger.info(`   Option ${idx + 1}: ${preview}${cap.text && cap.text.length > 80 ? '...' : ''}`);
+          });
+          
+          if (captions.length === 1 && numVariants > 1) {
+            this.logger.warn(`⚠️  Requested ${numVariants} captions but only received 1`);
+          }
+          
+          return { caption, captionData, captionOptions };
+        } else {
+          this.logger.warn('No captions returned in response');
+          this.logger.info(`Full response: ${JSON.stringify(parsed).substring(0, 500)}`);
+          return { caption: null, captionData: null, captionOptions: [] };
+        }
+      } catch (parseError) {
+        this.logger.warn(`Failed to parse caption response: ${parseError instanceof Error ? parseError.message : parseError}`);
+        this.logger.info(`Raw response: ${captionResult.response.substring(0, 500)}`);
+        return { caption: null, captionData: null, captionOptions: [] };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to generate captions: ${errorMessage}`);
+      return { caption: null, captionData: null, captionOptions: [] };
+    }
+  }
+
+  /**
+   * Step 9: Broadcast to Telegram using Broadcastputer
+   */
+  private async broadcastToTelegram(
+    imageUrl: string,
+    caption: string,
+    captionData: any,
+    captionOptions: any[],
+    selectedTrend: any,
+    trends: any,
+    brief: any,
+    imagePrompt: string | null
+  ): Promise<{ telegram?: string }> {
+    this.logger.section('Step 9: Broadcast to Telegram', 'broadcastputer');
+    
+    const telegramChatId = process.env.TELEGRAM_CHAT_ID || process.env.MEMEPUTER_TELEGRAM_CHAT_ID;
+    
+    if (!telegramChatId) {
+      this.logger.warn('Skipping Telegram post (chat ID not configured)');
+      return {};
+    }
+    
+    this.logger.info(`Posting to Telegram (Chat ID: ${telegramChatId})`);
+    
+    const captionsToShow = captionOptions.length > 0 
+      ? captionOptions.map((cap: any) => ({
+          text: cap.text || null,
+          hashtags: cap.hashtags || [],
+        }))
+      : caption 
+        ? [{ text: caption, hashtags: captionData?.hashtags || [] }]
+        : null;
+    
+    const enhancedCaption = this.buildEnhancedCaption(
+      captionsToShow,
+      selectedTrend || trends?.items?.[0] || null,
+      brief?.brief || null,
+      imagePrompt || null
+    );
+    
+    try {
+      const telegramResult = await this.hireAgent('broadcastputer', 'post_telegram', {
+        chatId: telegramChatId,
+        caption: enhancedCaption,
+        imageUrl: imageUrl || '',
+      });
+      
+      try {
+        let responseText = telegramResult.response.trim();
+        if (responseText.startsWith('```')) {
+          responseText = responseText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+        }
+        
+        const parsed = JSON.parse(responseText);
+        const messageLink = parsed.messageLink || parsed.data?.messageLink || null;
+        
+        if (messageLink && typeof messageLink === 'string') {
+          this.logger.result('✅', `Posted to Telegram: ${messageLink}`);
+          return { telegram: messageLink };
+        } else {
+          const responseStr = JSON.stringify(parsed);
+          const urlMatch = responseStr.match(/https:\/\/t\.me\/[^\s"']+/);
+          if (urlMatch) {
+            this.logger.result('✅', `Posted to Telegram: ${urlMatch[0]}`);
+            return { telegram: urlMatch[0] };
+          } else {
+            this.logger.warn('Posted to Telegram but no message link found in response');
+            return {};
+          }
+        }
+      } catch {
+        const urlMatch = telegramResult.response.match(/https:\/\/t\.me\/[^\s"']+/);
+        if (urlMatch) {
+          this.logger.result('✅', `Posted to Telegram: ${urlMatch[0]}`);
+          return { telegram: urlMatch[0] };
+        } else if (telegramResult.response.includes('http')) {
+          const link = telegramResult.response.trim();
+          this.logger.result('✅', `Posted to Telegram: ${link}`);
+          return { telegram: link };
+        } else {
+          this.logger.warn('Unexpected response format from BroadcastPuter');
+          return {};
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to post to Telegram: ${errorMessage}`);
+      if (errorMessage.includes('402') || errorMessage.includes('payment')) {
+        this.logger.info('This appears to be a payment issue - check BroadcastPuter\'s pricing');
+      } else if (errorMessage.includes('500') || errorMessage.includes('Internal')) {
+        this.logger.info('This appears to be a backend error - BroadcastPuter may be having issues');
+      }
+      return {};
+    }
+  }
+
+  /**
+   * Build the final task result object
+   */
+  private buildTaskResult(
+    request: TaskRequest,
+    trends: any,
+    selectedTrend: any,
+    brief: any,
+    imageUrl: string | null,
+    imagePrompt: string | null,
+    imageHash: string | null,
+    imageStatusUrl: string | null,
+    imageDescription: string | null,
+    imageDescriptionData: any,
+    caption: string | null,
+    captionData: any,
+    captionOptions: any[],
+    postedLinks: { telegram?: string }
+  ): TaskResult {
+    const result: string[] = [];
+    if (trends) {
+      result.push(`Trends found: ${trends.items?.length || 0} items`);
+    }
+    if (brief) {
+      result.push(`Brief created: ${brief.brief?.angle || 'N/A'}`);
+    }
+    if (imageUrl) {
+      result.push(`🖼️  Image: ${imageUrl}`);
+    } else {
+      result.push(`⚠️  Image: Not generated or URL not found`);
+    }
+    if (caption) {
+      result.push(`Caption: ${caption}`);
+    }
+    if (postedLinks.telegram) {
+      result.push(`📱 Telegram: ${postedLinks.telegram}`);
+    }
+
+    this.logger.spacer();
+    this.logger.section('✅ Task Completed', '');
+    this.logger.result('💰', `Total spent: ${this.totalSpent.toFixed(4)} USDC`);
+    this.logger.result('💵', `Remaining budget: ${(request.budgetUsdc - this.totalSpent).toFixed(4)} USDC`);
+    this.logger.result('👥', `Agents hired: ${this.agentsHired.length}`);
+    this.logger.result('💸', `Payments made: ${this.payments.length}`);
+
+    const finalSelectedTrend = selectedTrend || trends?.items?.[0] || null;
+    
+    return {
+      success: true,
+      totalSpent: this.totalSpent,
+      agentsHired: [...new Set(this.agentsHired)],
+      payments: this.payments.map(p => ({
+        agentId: p.agentId,
+        command: p.command || 'unknown',
+        amount: p.amount,
+        txId: p.txId,
+      })),
+      result: result.join('\n'),
+      artifacts: {
+        trends: trends ? {
+          items: trends.items || [],
+          selectedTrend: finalSelectedTrend ? {
+            id: finalSelectedTrend.id,
+            title: finalSelectedTrend.title,
+            summary: finalSelectedTrend.summary,
+            source: finalSelectedTrend.source,
+            score: finalSelectedTrend.score,
+            hashtags: finalSelectedTrend.hashtags,
+            canonicalUrl: finalSelectedTrend.canonicalUrl,
+          } : undefined,
+        } : null,
+        brief: brief?.brief ? {
+          angle: brief.brief.angle,
+          tone: brief.brief.tone,
+          visualStyle: brief.brief.visualStyle,
+          callToAction: brief.brief.callToAction,
+          negativeConstraints: brief.brief.negativeConstraints,
+        } : null,
+        imageGeneration: imageUrl || imagePrompt ? {
+          prompt: imagePrompt || undefined,
+          imageUrl: imageUrl || undefined,
+          imageHash: imageHash || undefined,
+          statusUrl: imageStatusUrl || undefined,
+          seed: undefined,
+          guidance: undefined,
+        } : undefined,
+        imageDescription: imageDescription ? {
+          description: imageDescription,
+          style: imageDescriptionData?.style || null,
+          composition: imageDescriptionData?.composition || null,
+          details: imageDescriptionData?.details || null,
+        } : null,
+        caption: captionData || caption ? {
+          text: caption || captionData?.text || null,
+          hashtags: captionData?.hashtags || [],
+          disclaimer: captionData?.disclaimer || null,
+          length: captionData?.length || null,
+        } : null,
+        captionOptions: captionOptions.length > 0 ? captionOptions.map((cap: any) => ({
+          text: cap.text || null,
+          hashtags: cap.hashtags || [],
+          disclaimer: cap.disclaimer || null,
+          length: cap.length || null,
+        })) : null,
+        postedLinks: Object.keys(postedLinks).length > 0 ? postedLinks : null,
+        brandProfile: request.brandProfile || null,
+      },
+    };
   }
 
   /**
@@ -1244,7 +1267,6 @@ Make it compelling and detailed while keeping the core concept. Return ONLY the 
     this.logger.warn(`Polling timeout after ${maxAttempts} seconds`);
     return null;
   }
-
 
   /**
    * Get current balance (for monitoring)

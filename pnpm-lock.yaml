@@ -88,12 +88,18 @@ importers:
       '@types/node':
         specifier: ^20.11.30
         version: 20.19.24
+      '@vitest/ui':
+        specifier: ^4.0.8
+        version: 4.0.8(vitest@4.0.8)
       tsx:
         specifier: ^4.16.0
         version: 4.20.6
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.8
+        version: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)(tsx@4.20.6)
 
   packages/cli:
     dependencies:
@@ -152,7 +158,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.8
-        version: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)
+        version: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)(tsx@4.20.6)
 
 packages:
 
@@ -3260,7 +3266,7 @@ packages:
       '@vitest/spy': 4.0.8
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      vite: 7.2.2(@types/node@20.19.24)
+      vite: 7.2.2(@types/node@20.19.24)(tsx@4.20.6)
     dev: true
 
   /@vitest/pretty-format@4.0.8:
@@ -3300,7 +3306,7 @@ packages:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)
+      vitest: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)(tsx@4.20.6)
     dev: true
 
   /@vitest/utils@4.0.8:
@@ -7175,7 +7181,7 @@ packages:
       - zod
     dev: false
 
-  /vite@7.2.2(@types/node@20.19.24):
+  /vite@7.2.2(@types/node@20.19.24)(tsx@4.20.6):
     resolution: {integrity: sha512-BxAKBWmIbrDgrokdGZH1IgkIk/5mMHDreLDmCJ0qpyJaAteP8NvMhkwr/ZCQNqNH97bw/dANTE9PDzqwJghfMQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
@@ -7222,11 +7228,12 @@ packages:
       postcss: 8.5.6
       rollup: 4.53.2
       tinyglobby: 0.2.15
+      tsx: 4.20.6
     optionalDependencies:
       fsevents: 2.3.3
     dev: true
 
-  /vitest@4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8):
+  /vitest@4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)(tsx@4.20.6):
     resolution: {integrity: sha512-urzu3NCEV0Qa0Y2PwvBtRgmNtxhj5t5ULw7cuKhIHh3OrkKTLlut0lnBOv9qe5OvbkMH2g38G7KPDCTpIytBVg==}
     engines: {node: ^20.0.0 || ^22.0.0 || >=24.0.0}
     hasBin: true
@@ -7280,7 +7287,7 @@ packages:
       tinyexec: 0.3.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.2.2(@types/node@20.19.24)
+      vite: 7.2.2(@types/node@20.19.24)(tsx@4.20.6)
       why-is-node-running: 2.3.0
     transitivePeerDependencies:
       - jiti
