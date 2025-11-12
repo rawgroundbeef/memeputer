@@ -147,8 +147,8 @@ To post content to Telegram, you need to:
    - Make sure the bot has permission to send messages
 
 2. **Get your Telegram Chat ID**
-   - For groups: Use a bot like `@userinfobot` to get your group's chat ID
-   - For channels: Use `@getidsbot` or check channel settings
+   - Add `@cherrybot` to your group or channel
+   - Send it the command `/id` and it will give you your chat ID
    - The chat ID is usually a negative number for groups (e.g., `-1001234567890`)
 
 3. **Set the Chat ID in your environment**
