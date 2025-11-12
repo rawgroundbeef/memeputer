@@ -3,7 +3,7 @@
  * 
  * This orchestrator demonstrates agent-to-agent economy:
  * - Receives a wallet with USDC balance
- * - Makes autonomous decisions about which agents to hire
+ * - Coordinates a fixed workflow of specialized agents
  * - Pays other agents from the provided wallet
  * - Tracks spending and manages budget
  * 
@@ -11,7 +11,7 @@
  * Future enhancement: Could use LLM reasoning for more sophisticated planning
  */
 import { Connection, Keypair } from '@solana/web3.js';
-import { AgentsApiClient, Memeputer, PromptResult } from '@memeputer/sdk';
+import { Memeputer, PromptResult, getUsdcBalance } from '@memeputer/sdk';
 import { OrchestratorConfig, TaskRequest, TaskResult } from './types';
 import { CleanLogger } from './logger';
 import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/utils';
@@ -26,20 +26,17 @@ import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/util
  * - The orchestrator coordinates the workflow and manages the budget
  */
 export class Orchestrator {
-  private apiClient: AgentsApiClient;
   private memeputer: Memeputer;
   private wallet: Keypair;
   private connection: Connection;
   private totalSpent: number = 0;
   private agentsHired: string[] = [];
   private payments: Array<{ agentId: string; command: string; amount: number; txId: string }> = [];
-  private taskBudget: number = 0; // Store task budget for safety limits
   private network: 'mainnet' | 'devnet';
   private logger: CleanLogger;
   private apiBase: string;
 
   constructor(config: OrchestratorConfig) {
-    this.apiClient = new AgentsApiClient(config.apiBase);
     this.memeputer = new Memeputer({
       apiUrl: config.apiBase,
       wallet: config.wallet,
@@ -60,7 +57,6 @@ export class Orchestrator {
     this.totalSpent = 0;
     this.agentsHired = [];
     this.payments = [];
-    this.taskBudget = request.budgetUsdc; // Store budget for safety limits
 
     // Fixed task: Find relevant topics and create a meme about them
     const fixedTask = 'Find relevant topics and create a meme about them';
@@ -90,121 +86,85 @@ export class Orchestrator {
       // Step 2: Discover Trends
       this.logger.section('Step 2: Discover Trends', 'trendputer');
       
-      // ADAPTIVE RETRY LOGIC: Try multiple times with different strategies if quality is poor
-      let trendsAttempts = 0;
-      const maxTrendAttempts = 2;
-      let selectedTrendFound = false;
+      // Get trends using TrendPuter's AI Reporter investigation (with web search)
+      // TrendPuter uses its reporter profile - no custom commands needed, just natural language prompts
+      const keywordsContext = focusPlan.keywords && focusPlan.keywords.length > 0
+        ? ` Focus on: ${focusPlan.keywords.join(', ')}.`
+        : '';
       
-      while (!selectedTrendFound && trendsAttempts < maxTrendAttempts) {
-        trendsAttempts++;
-        
-        if (trendsAttempts > 1) {
-          this.logger.warn(`Retry attempt ${trendsAttempts}: Requesting higher quality trends`);
-        }
-        
-        // Get trends using TrendPuter's AI Reporter investigation (with web search)
-        // TrendPuter uses its reporter profile - no custom commands needed, just natural language prompts
-        const keywordsContext = focusPlan.keywords && focusPlan.keywords.length > 0
-          ? ` Focus on: ${focusPlan.keywords.join(', ')}.`
-          : '';
-        
-        // Build natural language prompt for TrendPuter
-        // Simple and direct - TrendPuter's profile handles the investigation
-        const trendPrompt = trendsAttempts === 1
-          ? `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`
-          : `Investigate the top news stories with a focus on verified, credible sources.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
-        
-        // Step 2: Discover Trends - Uses Trendputer to investigate news stories and return 10 trends as JSON
-        // No hardcoded amount - use remaining budget as safety limit
-        // Actual payment comes from 402 quote
-        const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
-        
-        // Parse trends response
-        try {
-          trends = JSON.parse(trendsResult.response);
-          this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
-          // Display trends in readable format
-          if (trends?.items && trends.items.length > 0) {
-            trends.items.forEach((trend: any, idx: number) => {
-              console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-              if (trend.summary) {
-                console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-              }
-            });
-          }
-        } catch (parseError) {
-          trends = { items: [] };
-          
-          // Try to extract JSON from markdown code blocks or other formats
-          const jsonMatch = trendsResult.response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || 
-                           trendsResult.response.match(/(\{[\s\S]*"items"[\s\S]*\})/);
-          if (jsonMatch) {
-            try {
-              trends = JSON.parse(jsonMatch[1]);
-              this.logger.result('✅', `Extracted ${trends?.items?.length || 0} trends from markdown`);
-              // Display trends
-              if (trends?.items && trends.items.length > 0) {
-                trends.items.forEach((trend: any, idx: number) => {
-                  console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-                  if (trend.summary) {
-                    console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-                  }
-                });
-              }
-            } catch {
-              this.logger.warn('Failed to parse trends JSON');
-            }
-          } else {
-            this.logger.warn('No trends found in response');
-          }
-        }
-        
-        // Step 3: Select Best Trend
-        // THE WOW FACTOR: The orchestrator agent hires BriefPuter to evaluate trends using AI reasoning
-        // This demonstrates true autonomy - it uses AI reasoning (via another agent) instead of just heuristics
+      // Build natural language prompt for TrendPuter
+      // Simple and direct - TrendPuter's profile handles the investigation
+      const trendPrompt = `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
+      
+      // Step 2: Discover Trends - Uses Trendputer to investigate news stories and return 10 trends as JSON
+      // No hardcoded amount - use remaining budget as safety limit
+      // Actual payment comes from 402 quote
+      const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
+      
+      // Parse trends response
+      try {
+        trends = JSON.parse(trendsResult.response);
+        this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
+        // Display trends in readable format
         if (trends?.items && trends.items.length > 0) {
-          this.logger.section('Step 3: Select Best Trend', 'briefputer');
-          this.logger.startLoading('Processing...');
-          selectedTrend = await this.selectBestTrend(trends.items, fixedTask);
-          this.logger.stopLoading();
-          
-          if (selectedTrend) {
-            this.logger.result('✅', `Selected: "${selectedTrend.title}"`);
-            if (selectedTrend.summary) {
-              this.logger.info(`   ${selectedTrend.summary.substring(0, 100)}${selectedTrend.summary.length > 100 ? '...' : ''}`);
+          trends.items.forEach((trend: any, idx: number) => {
+            console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
+            if (trend.summary) {
+              console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
             }
-            selectedTrendFound = true;
-          } else {
-            this.logger.warn('No suitable trends found in this batch');
-            if (trendsAttempts < maxTrendAttempts) {
-              // AI-POWERED DECISION: Ask if we should retry
-              const shouldRetry = await this.shouldRetryTrends(trendsAttempts, fixedTask);
-              if (shouldRetry) {
-                this.logger.info('Retrying with higher quality focus');
-                // Continue loop to retry
-              } else {
-                this.logger.info('Proceeding without trends');
-                trends = { items: [] };
-                selectedTrendFound = true; // Exit loop
-              }
-            } else {
-              this.logger.warn('Exhausted retry attempts - proceeding without trend context');
-              trends = { items: [] };
+          });
+        }
+      } catch (parseError) {
+        trends = { items: [] };
+        
+        // Try to extract JSON from markdown code blocks or other formats
+        const jsonMatch = trendsResult.response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || 
+                         trendsResult.response.match(/(\{[\s\S]*"items"[\s\S]*\})/);
+        if (jsonMatch) {
+          try {
+            trends = JSON.parse(jsonMatch[1]);
+            this.logger.result('✅', `Extracted ${trends?.items?.length || 0} trends from markdown`);
+            // Display trends
+            if (trends?.items && trends.items.length > 0) {
+              trends.items.forEach((trend: any, idx: number) => {
+                console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
+                if (trend.summary) {
+                  console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
+                }
+              });
             }
+          } catch {
+            this.logger.warn('Failed to parse trends JSON');
           }
         } else {
-          this.logger.warn('No trends returned');
-          if (trendsAttempts < maxTrendAttempts) {
-            // Continue loop to retry
-          } else {
-            this.logger.warn('Exhausted retry attempts - proceeding without trend context');
-          }
+          this.logger.warn('No trends found in response');
         }
+      }
+      
+      // Step 3: Select Best Trend
+      // THE WOW FACTOR: The orchestrator agent hires BriefPuter to evaluate trends using AI reasoning
+      // This demonstrates true autonomy - it uses AI reasoning (via another agent) instead of just heuristics
+      if (trends?.items && trends.items.length > 0) {
+        this.logger.section('Step 3: Select Best Trend', 'briefputer');
+        this.logger.startLoading('Processing...');
+        selectedTrend = await this.selectBestTrend(trends.items, fixedTask);
+        this.logger.stopLoading();
+        
+        if (selectedTrend) {
+          this.logger.result('✅', `Selected: "${selectedTrend.title}"`);
+          if (selectedTrend.summary) {
+            this.logger.info(`   ${selectedTrend.summary.substring(0, 100)}${selectedTrend.summary.length > 100 ? '...' : ''}`);
+          }
+        } else {
+          this.logger.warn('No suitable trends found - proceeding without trend context');
+          trends = { items: [] };
+        }
+      } else {
+        this.logger.warn('No trends returned - proceeding without trend context');
       }
 
       // Step 4: Create Creative Brief
       let brief: any = null;
-      const hasGoodTrend = selectedTrend !== null;
       
       this.logger.section('Step 4: Create Creative Brief', 'briefputer');
       
@@ -280,7 +240,6 @@ export class Orchestrator {
 
       // Step 5: Enhance Image Prompt
       let imageUrl: string | null = null;
-      const hasBrief = brief?.brief?.angle !== null && brief?.brief?.angle !== undefined;
       
       this.logger.section('Step 5: Enhance Image Prompt', 'promptputer');
       
@@ -333,8 +292,23 @@ export class Orchestrator {
       // Check for statusUrl (async image generation) - need to poll
       if (!imageUrl && imageResult.statusUrl) {
         this.logger.info('Image generation in progress...');
-        // Poll for image completion
-        imageUrl = await this.pollImageStatus(imageResult.statusUrl);
+        // Poll for image completion using SDK method
+        const statusResult = await this.memeputer.pollStatus(imageResult.statusUrl, {
+          maxAttempts: 120,
+          intervalMs: 1000,
+          onProgress: (attempt, _status) => {
+            // Calculate elapsed seconds: (attempt - 1) * intervalMs / 1000
+            // Since intervalMs is 1000ms, elapsedSeconds = attempt - 1
+            const elapsedSeconds = attempt - 1;
+            if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
+              this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed)`);
+            }
+          },
+        });
+        imageUrl = statusResult.imageUrl || statusResult.mediaUrl || null;
+        if (statusResult.status === 'failed') {
+          throw new Error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
+        }
       }
       
       if (imageUrl) {
@@ -354,6 +328,7 @@ export class Orchestrator {
         
         try {
           // Step 7: Describe Image - Uses ImageDescripterputer with describe_image command
+          // Send as JSON payload (not CLI format) since the agent expects parsed parameters
           const descriptionResult = await this.hireAgent('imagedescripterputer', 'describe_image', {
             imageUrl: imageUrl,
             detailLevel: 'detailed',
@@ -559,7 +534,7 @@ export class Orchestrator {
       }
 
       // Step 9: Broadcast to Telegram
-      let postedLinks: { telegram?: string } = {};
+      const postedLinks: { telegram?: string } = {};
       
       if (!imageUrl) {
         this.logger.warn('Skipping Telegram post - no image was generated');
@@ -765,76 +740,42 @@ export class Orchestrator {
   }
 
   /**
-   * Hire an agent and pay them from the orchestrator's wallet.
+   * Hire an agent and track payment
    * 
+   * Wraps memeputer.prompt() with payment tracking and logging.
    * This demonstrates agent-to-agent economy:
    * - The orchestrator agent pays from the provided wallet
    * - Each payment is tracked and deducted from the agent's budget
-   * - The actual payment amount comes from the 402 quote (maxAmountRequired)
-   * - maxBudgetUsdc is only a safety limit to prevent overspending
+   * - The actual payment amount comes from the 402 receipt/quote
    */
   private async hireAgent(
     agentId: string,
     command: string,
-    payload: any,
-    maxBudgetUsdc?: number // Optional safety limit - defaults to remaining budget
+    payload: any
   ): Promise<PromptResult> {
-    // Use provided limit or remaining budget as safety limit
-    const remainingBudget = this.taskBudget - this.totalSpent;
-    const safetyLimit = maxBudgetUsdc ?? remainingBudget;
-    
-    // Show command or prompt preview
-    const commandPreview = command.length > 50 && Object.keys(payload).length === 0
-      ? `${command.substring(0, 100)}...`
-      : command;
-    
-    // Use logger spinner for payment processing
-    this.logger.startLoading(`Paying ${agentId}...`);
+    this.logger.startLoading(`Calling ${agentId}...`);
     
     try {
-
-      // If payload is empty and command looks like natural language, send as-is
-      // Otherwise, format as structured command
-      const message = Object.keys(payload).length === 0 && command.length > 50
-        ? command // Natural language prompt - send directly
-        : JSON.stringify({
-            command,
-            ...payload,
-          });
+      // Determine if this is a natural language prompt or structured command
+      const isNaturalLanguage = Object.keys(payload).length === 0 && command.length > 50;
       
-      // Debug: log payload for troubleshooting
-      if (process.env.DEBUG) {
-        this.logger.info(`Debug: ${JSON.stringify(payload, null, 2)}`);
-      }
-
-      // Call the agent using x402 - the orchestrator agent pays!
-      // Using SDK prompt method (first instance migrated)
-      const result = await this.memeputer.prompt(
-        agentId,
-        message
-      );
+      // Call agent via SDK (payment handled internally by SDK)
+      // SDK will automatically detect if command needs JSON format or CLI format
+      const result = isNaturalLanguage
+        ? await this.memeputer.prompt(agentId, command) // Natural language prompt
+        : await this.memeputer.command(agentId, command, payload); // Structured command - SDK handles format
       
-      this.logger.stopLoading(`Paid ${agentId}`);
+      this.logger.stopLoading(`Completed ${agentId}`);
 
-      // Track payment - use RECEIPT (actual amount paid) from x402Receipt if available
-      // Terminology:
-      // - QUOTE (402 response): maxAmountRequired = estimated cost (budget limit)
-      // - RECEIPT (success response): x402Receipt.amountPaidUsdc = actual cost (for tracking)
+      // Track payment if transaction occurred
       if (result.transactionSignature) {
-        let actualAmount: number;
-        let amountSource: string;
-        
-        if (result.x402Receipt) {
-          // RECEIPT: Use actual amount paid from x402 receipt (after payment)
-          // This is the accurate cost to track
-          actualAmount = result.x402Receipt.amountPaidUsdc;
-          amountSource = 'actual (from receipt)';
-        } else {
-          // Fallback: Use safety limit as estimate (shouldn't happen - backend should return receipt)
-          // This happens if backend doesn't return x402Receipt yet
-          actualAmount = safetyLimit;
-          amountSource = 'estimated (receipt not available, using safety limit)';
+        // Receipt should always be present after payment - quote is only in 402 response before payment
+        if (!result.x402Receipt?.amountPaidUsdc) {
+          throw new Error(`Payment transaction exists but no receipt amount found for ${agentId}`);
         }
+        
+        // Use receipt amount (actual paid) - this is what we actually spent
+        const actualAmount = result.x402Receipt.amountPaidUsdc;
         
         this.totalSpent += actualAmount;
         this.agentsHired.push(agentId);
@@ -845,14 +786,11 @@ export class Orchestrator {
           txId: result.transactionSignature,
         });
 
-        // Get payer and merchant addresses
+        // Log payment details - use receipt amount (actual paid) for display
         const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
         const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
+        const paymentAmount = result.x402Receipt?.amountPaidUsdc || actualAmount;
         
-        // Use quote amount if available (what we actually paid), otherwise use receipt amount
-        const paymentAmount = result.x402Quote?.amountQuotedUsdc || actualAmount;
-        
-        // Log payment with CleanLogger
         this.logger.payment({
           agentId,
           amount: paymentAmount,
@@ -1125,170 +1063,6 @@ Respond in this exact JSON format:
   }
 
   /**
-   * AI-POWERED DECISION: Ask BriefPuter if we should get trends for this task
-   */
-  private async shouldGetTrends(task: string): Promise<boolean> {
-    const prompt = `I have a task: "${task}"
-
-Should I get trending topics to help me complete this task? Consider:
-- Does the task benefit from current trends?
-- Would trending content make this more engaging?
-- Is the task too specific to need trends?
-
-Respond in this exact JSON format:
-{
-  "decision": "yes" or "no",
-  "reasoning": "Brief explanation of your decision"
-}`;
-
-    try {
-      const result = await this.memeputer.prompt(
-        'briefputer',
-        prompt
-      );
-
-      if (result.transactionSignature) {
-        const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'should-get-trends',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-      }
-
-      // Parse JSON response
-      let decision: boolean;
-      let reasoning: string = '';
-      try {
-        const parsed = JSON.parse(result.response);
-        const decisionStr = parsed.decision?.toLowerCase() || '';
-        decision = decisionStr === 'yes' || decisionStr.startsWith('y');
-        reasoning = parsed.reasoning || '';
-      } catch {
-        // Fallback to text parsing if JSON parsing fails
-        const response = result.response.trim().toLowerCase();
-        decision = response.includes('yes') || response.startsWith('y');
-        reasoning = result.response;
-      }
-      console.log(`   🤖 AI decision: ${decision ? 'YES - Get trends' : 'NO - Skip trends'}`);
-      if (reasoning) {
-        console.log(`      Reasoning: ${reasoning.substring(0, 100)}${reasoning.length > 100 ? '...' : ''}`);
-      }
-      return decision;
-    } catch (error) {
-      console.log(`   ⚠️  AI decision failed, using fallback: Get trends`);
-      // Fallback: Get trends if task mentions meme/create/trend
-      return task.toLowerCase().includes('trend') || 
-             task.toLowerCase().includes('meme') ||
-             task.toLowerCase().includes('create');
-    }
-  }
-
-  /**
-   * AI-POWERED DECISION: Ask BriefPuter if we should retry getting trends
-   */
-  private async shouldRetryTrends(attemptNumber: number, task: string): Promise<boolean> {
-    const prompt = `I tried to get trends ${attemptNumber} time(s) but didn't find suitable ones for this task: "${task}"
-
-Should I retry with different sources, or proceed without trends? Consider:
-- Is the task too specific to need trends?
-- Would trending content significantly improve the result?
-- Am I wasting budget on retries?
-
-Respond with ONLY "yes" (retry) or "no" (proceed without trends).`;
-
-    try {
-      const result = await this.apiClient.interact(
-        'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
-      );
-
-      if (result.transactionSignature) {
-        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'should-retry-trends',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-      }
-
-      const response = result.response.trim().toLowerCase();
-      const decision = response.includes('yes') || response.startsWith('y');
-      console.log(`   🤖 AI decision: ${decision ? 'YES - Retry' : 'NO - Proceed without trends'}`);
-      console.log(`      Reasoning: ${response.substring(0, 100)}...`);
-      return decision;
-    } catch (error) {
-      console.log(`   ⚠️  AI decision failed, using fallback: Retry`);
-      return true; // Default: retry once
-    }
-  }
-
-  /**
-   * AI-POWERED DECISION: Ask BriefPuter if we should generate a brief
-   */
-  private async shouldGenerateBrief(
-    task: string,
-    selectedTrend: any | null,
-    trends: any | null
-  ): Promise<boolean> {
-    const hasTrend = selectedTrend !== null;
-    const trendInfo = hasTrend 
-      ? `I found a trend: "${selectedTrend.title}" - ${selectedTrend.summary?.substring(0, 100)}`
-      : trends?.items?.length > 0 
-        ? `I have ${trends.items.length} trends but none were perfect`
-        : 'I have no trends';
-
-    const prompt = `I have a task: "${task}"
-${trendInfo}
-
-Should I generate a creative brief before creating content? Consider:
-- Would a brief help create better content?
-- Is the task simple enough to skip the brief?
-- Do I have enough context (trends) to create a useful brief?
-
-Respond with ONLY "yes" or "no".`;
-
-    try {
-      const result = await this.apiClient.interact(
-        'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
-      );
-
-      if (result.transactionSignature) {
-        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'should-generate-brief',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-      }
-
-      const response = result.response.trim().toLowerCase();
-      const decision = response.includes('yes') || response.startsWith('y');
-      console.log(`   🤖 AI decision: ${decision ? 'YES - Generate brief' : 'NO - Skip brief'}`);
-      console.log(`      Reasoning: ${response.substring(0, 100)}...`);
-      return decision;
-    } catch (error) {
-      console.log(`   ⚠️  AI decision failed, using fallback: Generate brief`);
-      // Fallback: Generate brief if we have trends or task mentions create/meme
-      return hasTrend || 
-             (trends?.items?.length > 0) ||
-             task.toLowerCase().includes('create') ||
-             task.toLowerCase().includes('meme');
-    }
-  }
-
-  /**
    * Step 5: Enhance Image Prompt
    * Uses Promptputer to refine and enhance the image generation prompt with quality modifiers
    */
@@ -1347,120 +1121,6 @@ Make it compelling and detailed while keeping the core concept. Return ONLY the 
     } catch (error) {
       this.logger.warn(`Prompt enhancement failed, using base prompt: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return basePrompt; // Fallback to base prompt
-    }
-  }
-
-  /**
-   * AI-POWERED DECISION: Ask BriefPuter if we should generate an image
-   */
-  private async shouldGenerateImage(task: string, brief: any | null): Promise<boolean> {
-    const hasBrief = brief?.brief?.angle !== null && brief?.brief?.angle !== undefined;
-    const briefInfo = hasBrief 
-      ? `I have a creative brief with angle: "${brief.brief.angle?.substring(0, 100)}"`
-      : 'I do not have a creative brief';
-
-    const prompt = `I have a task: "${task}"
-${briefInfo}
-
-Should I generate an image to complete this task? Consider:
-- Does the task require visual content?
-- Would an image significantly improve the result?
-- Do I have enough context (brief) to generate a good image?
-
-Respond with ONLY "yes" or "no".`;
-
-    try {
-      const result = await this.apiClient.interact(
-        'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
-      );
-
-      if (result.transactionSignature) {
-        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'should-generate-image',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-      }
-
-      const response = result.response.trim().toLowerCase();
-      const decision = response.includes('yes') || response.startsWith('y');
-      return decision;
-    } catch (error) {
-      this.logger.warn('AI decision failed, using fallback: Generate image');
-      // Fallback: Generate image if we have brief or task mentions image/meme/create
-      return hasBrief ||
-             task.toLowerCase().includes('image') ||
-             task.toLowerCase().includes('meme') ||
-             task.toLowerCase().includes('create');
-    }
-  }
-
-  /**
-   * AI-POWERED DECISION: Ask BriefPuter if content is ready to post
-   */
-  private async shouldPostContent(
-    task: string,
-    imageUrl: string | null,
-    caption: string | null,
-    brief: any | null
-  ): Promise<boolean> {
-    const hasImage = imageUrl !== null;
-    const hasCaption = caption !== null;
-    const hasBrief = brief?.brief?.angle !== null;
-
-    const prompt = `I have a task: "${task}"
-
-Current status:
-- Image: ${hasImage ? '✅ Generated' : '❌ Missing'}
-- Caption: ${hasCaption ? '✅ Generated' : '❌ Missing'}
-- Brief: ${hasBrief ? '✅ Created' : '❌ Missing'}
-
-Should I post this content to social media? Consider:
-- If I have both image and caption, the content is complete and ready to post
-- The goal is to share the meme I created
-- Only say "no" if content is truly incomplete or low quality
-
-Respond with ONLY "yes" or "no".`;
-
-    try {
-      const result = await this.apiClient.interact(
-        'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
-      );
-
-      if (result.transactionSignature) {
-        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'should-post-content',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-      }
-
-      const response = result.response.trim().toLowerCase();
-      const decision = response.includes('yes') || response.startsWith('y');
-      console.log(`   🤖 AI decision: ${decision ? 'YES - Post content' : 'NO - Wait for better quality'}`);
-      console.log(`      Reasoning: ${response.substring(0, 100)}...`);
-      // If we have both image and caption, post regardless of AI decision (AI might be too conservative)
-      // Only skip if AI says no AND we're missing critical content
-      if (hasImage && hasCaption) {
-        return true; // Always post if we have complete content
-      }
-      return decision && hasImage && hasCaption; // Otherwise respect AI decision
-    } catch (error) {
-      console.log(`   ⚠️  AI decision failed, using fallback: Post if complete`);
-      // Fallback: Only post if we have both image and caption
-      return hasImage && hasCaption;
     }
   }
 
@@ -1585,84 +1245,11 @@ Respond with ONLY "yes" or "no".`;
     return null;
   }
 
-  /**
-   * Poll image status URL until image is ready
-   */
-  private async pollImageStatus(statusUrl: string, maxAttempts: number = 120, delayMs: number = 1000): Promise<string | null> {
-    const axios = (await import('axios')).default;
-    
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await axios.get(statusUrl, {
-          timeout: 5000,
-        });
-        
-        // Handle nested data structure (response.data.data vs response.data)
-        const responseData = response.data;
-        const data = responseData.data || responseData;
-        
-        const status = data.status;
-        const imageUrl = data.imageUrl || data.image_url;
-        
-        // Check if image is ready
-        if (status === 'completed' || status === 'done' || imageUrl) {
-          return imageUrl || null;
-        }
-        
-        // Check if failed
-        if (status === 'failed' || status === 'error') {
-          throw new Error(`Image generation failed: ${data.error || data.message || 'Unknown error'}`);
-        }
-        
-        // Still processing - log progress every 15 seconds
-        if (status === 'processing' || status === 'pending' || status === 'in_progress') {
-          const elapsedSeconds = Math.floor(attempt * delayMs / 1000);
-          if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
-            const progress = data.progress ? ` (${data.progress}%)` : '';
-            console.log(`   ⏳ Still processing...${progress} (${elapsedSeconds}s elapsed)`);
-          }
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          continue;
-        }
-        
-        // If status is unknown but imageUrl is present, use it
-        if (imageUrl) {
-          return imageUrl;
-        }
-        
-        // Wait before next attempt
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      } catch (error: any) {
-        if (error.response?.status === 404) {
-          // Status endpoint not found, might be a different format
-          console.log(`   ⚠️  Status endpoint not found, stopping`);
-          break;
-        }
-        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-          // Connection issues, only log occasionally
-          const elapsedSeconds = Math.floor(attempt * delayMs / 1000);
-          if (elapsedSeconds > 0 && elapsedSeconds % 30 === 0) {
-            console.log(`   ⚠️  Connection issue, retrying...`);
-          }
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          continue;
-        }
-        if (attempt === maxAttempts) {
-          throw new Error(`Failed to poll image status after ${maxAttempts} attempts: ${error.message}`);
-        }
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-    }
-    
-    return null; // Timeout
-  }
 
   /**
    * Get current balance (for monitoring)
    */
   async getBalance(): Promise<number> {
-    const { getUsdcBalance } = await import('@memeputer/sdk');
     return getUsdcBalance(this.connection, this.wallet);
   }
 }

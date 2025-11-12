@@ -1,0 +1,29 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+
+# Test files
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# Development files
+tsconfig.json
+.vscode/
+.idea/
+
+# Build artifacts (keep dist/)
+*.map
+
+# Dependencies
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+.DS_Store
+*.log
+

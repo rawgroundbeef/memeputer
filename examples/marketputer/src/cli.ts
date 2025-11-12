@@ -88,7 +88,7 @@ program
       const brandPathToLoad = opts.brand || 'memeputer.json';
       
       try {
-        let brandPath = brandPathToLoad.startsWith('~/') 
+        const brandPath = brandPathToLoad.startsWith('~/') 
           ? brandPathToLoad.replace('~', homedir())
           : brandPathToLoad;
         

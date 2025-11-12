@@ -1,10 +1,10 @@
 // Helper functions for Solscan URLs and network detection
 
-export function getSolscanTxUrl(signature: string, network: 'mainnet' | 'devnet' = 'mainnet'): string {
+export function getSolscanTxUrl(signature: string, _network: 'mainnet' | 'devnet' = 'mainnet'): string {
   return `https://solscan.io/tx/${signature}`;
 }
 
-export function getSolscanAccountUrl(address: string, network: 'mainnet' | 'devnet' = 'mainnet'): string {
+export function getSolscanAccountUrl(address: string, _network: 'mainnet' | 'devnet' = 'mainnet'): string {
   return `https://solscan.io/account/${address}`;
 }
 

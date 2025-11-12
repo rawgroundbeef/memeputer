@@ -11,12 +11,18 @@
     "version": "changeset version",
     "release": "pnpm build && changeset publish",
     "clean": "pnpm -r clean",
-    "link:cli": "pnpm --filter memeputer build && cd packages/cli && pnpm link --global"
+    "link:cli": "pnpm --filter memeputer build && cd packages/cli && pnpm link --global",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
-    "typescript": "^5.9.0",
-    "prettier": "^3.3.0"
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.3.0",
+    "typescript": "^5.9.0"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -24,4 +30,3 @@
   },
   "packageManager": "pnpm@8.15.0"
 }
-

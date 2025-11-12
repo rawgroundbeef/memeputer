@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run build and test for packages that have these scripts
+echo "🔨 Running build and test before commit..."
+
+# Get to repo root
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Run build for SDK (the main package we're working on)
+cd packages/sdk && pnpm build || {
+  echo "❌ SDK build failed. Commit aborted."
+  exit 1
+}
+
+# Run tests for SDK
+pnpm test:run || {
+  echo "❌ SDK tests failed. Commit aborted."
+  exit 1
+}
+
+echo "✅ Build and test passed!"

@@ -17,7 +17,7 @@ export interface PromptOptions {
 export interface CommandOptions {
   agentId: string;
   command: string;
-  params?: string[] | Record<string, string>;
+  params?: string[] | Record<string, any>;
 }
 
 export interface PromptResult extends InteractionResult {}
@@ -117,40 +117,66 @@ export class Memeputer {
   async command(
     options: CommandOptions | string,
     command?: string,
-    params?: string[] | Record<string, string>
+    params?: string[] | Record<string, any>
   ): Promise<CommandResult> {
     this.ensureInitialized();
     
     let agentId: string;
     let cmd: string;
-    let cmdParams: string[] = [];
+    let paramsObj: Record<string, any> | undefined;
     
     if (typeof options === 'string') {
       // String overload: command(agentId, command, params?)
       // Matches prompt signature: prompt(agentId, message)
       agentId = options;
       cmd = command || '';
-      
-      // Handle params - can be array (positional) or object (named)
+      paramsObj = Array.isArray(params) ? undefined : params;
+    } else {
+      // Object syntax
+      agentId = options.agentId;
+      cmd = options.command;
+      paramsObj = Array.isArray(options.params) ? undefined : options.params;
+    }
+    
+    // Commands that expect JSON payloads (not CLI format) - only for commands that need JSON even with simple params
+    const jsonPayloadCommands = ['describe_image', 'generate_captions', 'post_telegram'];
+    const needsJsonPayload = jsonPayloadCommands.includes(cmd);
+    
+    // Check if params contain complex objects (not just primitives)
+    const hasComplexParams = paramsObj && Object.values(paramsObj).some(
+      value => typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean' && value !== null
+    );
+    
+    // If command needs JSON or params are complex, send as JSON via prompt()
+    if (needsJsonPayload || hasComplexParams) {
+      const message = JSON.stringify({ command: cmd, ...(paramsObj || {}) });
+      return this.apiClient.interact(
+        agentId,
+        message,
+        this.wallet!,
+        this.connection!,
+      );
+    }
+    
+    // Otherwise, use CLI format
+    let cmdParams: string[] = [];
+    
+    if (typeof options === 'string') {
       if (params) {
         if (Array.isArray(params)) {
           cmdParams = params;
         } else {
           // Convert named params object to CLI format: --key value
-          cmdParams = Object.entries(params).flatMap(([key, value]) => [`--${key}`, value]);
+          cmdParams = Object.entries(params).flatMap(([key, value]) => [`--${key}`, String(value)]);
         }
       }
     } else {
-      // Object syntax
-      agentId = options.agentId;
-      cmd = options.command;
-      
       if (options.params) {
         if (Array.isArray(options.params)) {
           cmdParams = options.params;
         } else {
           // Convert named params object to CLI format: --key value
-          cmdParams = Object.entries(options.params).flatMap(([key, value]) => [`--${key}`, value]);
+          cmdParams = Object.entries(options.params).flatMap(([key, value]) => [`--${key}`, String(value)]);
         }
       }
     }
