@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { getDefaultWalletPath } from "./wallet.js";
+import { getDefaultWalletPath } from "./wallet";
 
 // Load environment variables from .env file
 config();

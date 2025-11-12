@@ -4,7 +4,7 @@ import ora from "ora";
 import chalk from "chalk";
 import { loadConfig, getDefaultWalletPath } from "../lib/config.js";
 import { loadWallet, formatPublicKey } from "../lib/wallet.js";
-import { AgentsApiClient } from "../lib/api.js";
+import { Memeputer } from "@memeputer/sdk";
 import {
   formatSuccess,
   formatError,
@@ -12,9 +12,9 @@ import {
   formatAgent,
 } from "../utils/formatting.js";
 
-export function createAskCommand(): Command {
-  return new Command("ask")
-    .description("Ask any agent a question (pays via x402 with $0 gas fees!)")
+export function createPromptCommand(): Command {
+  return new Command("prompt")
+    .description("Prompt any agent with a message (pays via x402 with $0 gas fees!)")
     .argument("<agent>", "Agent ID (e.g., memeputer, tradeputer, pfpputer)")
     .argument("<message>", "Your message or question")
     .option("-w, --wallet <path>", "Path to Solana wallet keypair")
@@ -57,20 +57,25 @@ export function createAskCommand(): Command {
           spinner.succeed("Connected to Solana");
         }
 
-        // Call API with manual x402 payment flow
+        // Create SDK instance
+        const memeputer = new Memeputer({
+          apiUrl,
+          rpcUrl,
+          wallet,
+          connection,
+        });
+
+        // Call agent with prompt
         spinner = quiet
           ? null
           : ora(
-              `Asking ${formatAgent(agentName)}... (processing payment via x402)`,
+              `Prompting ${formatAgent(agentName)}... (processing payment via x402)`,
             ).start();
 
-        const apiClient = new AgentsApiClient(apiUrl);
-        const result = await apiClient.interact(
+        const result = await memeputer.prompt({
           agentId,
           message,
-          wallet,
-          connection,
-        );
+        });
 
         if (spinner) {
           spinner.succeed(`Response received from ${formatAgent(agentName)}`);
@@ -82,7 +87,7 @@ export function createAskCommand(): Command {
             ? null
             : ora("Waiting for operation to complete...").start();
 
-          const statusResult = await apiClient.pollStatus(result.statusUrl, {
+          const statusResult = await memeputer.pollStatus(result.statusUrl, {
             intervalMs: 5000,
             maxAttempts: 60,
             onProgress: (attempt, status) => {

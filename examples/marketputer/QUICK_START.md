@@ -7,7 +7,6 @@ This is a quick reference for testing the agent economy example step-by-step.
 1. Make sure you have a wallet set up (see main README.md)
 2. Set up `.env` file:
    ```bash
-   MEMEPUTER_API_BASE=http://localhost:3006
    SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
    MEMEPUTER_WALLET=~/.config/solana/id.json
    ```
@@ -101,8 +100,8 @@ pnpm step0 --task "..." --orchestrator-wallet ~/.config/solana/id.json
 ```
 
 **API errors:**
-- Check `MEMEPUTER_API_BASE` in `.env`
 - Make sure API is accessible
+- Check your network connection
 
 **Payment failures:**
 - Ensure wallet has USDC balance

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import ora from "ora";
 import { loadConfig } from "../lib/config.js";
-import { AgentsApiClient } from "../lib/api.js";
+import { AgentsApiClient } from "@memeputer/sdk";
 import {
   formatError,
   formatTable,
@@ -49,7 +49,7 @@ export function createAgentsCommand(): Command {
           console.log(
             '  memeputer pfp "your prompt" --wallet ~/.config/solana/id.json',
           );
-          console.log('  memeputer ask veOputer "your message"');
+          console.log('  memeputer prompt veOputer "your message"');
           console.log();
         }
       } catch (error: any) {

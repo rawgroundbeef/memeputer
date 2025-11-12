@@ -4,7 +4,7 @@ import ora from "ora";
 import chalk from "chalk";
 import { loadConfig, getDefaultWalletPath } from "../lib/config.js";
 import { loadWallet, formatPublicKey } from "../lib/wallet.js";
-import { getUsdcBalance } from "../lib/x402Client.js";
+import { getUsdcBalance } from "@memeputer/sdk";
 import {
   formatError,
   formatSuccess,

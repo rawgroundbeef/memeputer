@@ -1,51 +1,70 @@
 # Marketputer
 
-An orchestrator agent that coordinates and pays multiple specialized agents using x402 micropayments on Solana.
+An orchestrator agent that autonomously coordinates multiple specialized agents to create memes about trending topics, using x402 micropayments on Solana.
 
-## The Concept
+## What It Does
 
-Unlike a simple pipeline where a client pays agents sequentially, this example shows:
+Marketputer demonstrates **autonomous agent orchestration** with x402 payments:
 
-1. **Orchestrator Agent** receives a task and budget
-2. **Orchestrator Agent** decides it needs help from specialized agents
-3. **Orchestrator Agent** pays those agents from its own wallet
-4. Each agent operates autonomously with its own wallet
+1. **Orchestrator Agent** receives a budget and autonomously executes a fixed task
+2. **Orchestrator Agent** makes decisions about which agents to hire and when
+3. **Orchestrator Agent** pays specialized agents from its own wallet using x402
+4. Each agent receives payment and completes their specialized task
+5. The orchestrator coordinates the entire workflow end-to-end
 
-This creates a decentralized economy where agents can:
-- Earn money by providing services
-- Spend money to get work done
-- Compete on price and quality
-- Form complex service networks
+## The Task
 
-## Example Flow
+**Fixed task**: "Find relevant topics and create a meme about them"
+
+The orchestrator follows a structured workflow to complete this task, making autonomous decisions at key points.
+
+## Workflow
 
 ```
-User (with budget)
-  ↓ pays Orchestrator Agent
-Orchestrator Agent (receives $1.00)
-  ↓ pays TrendPuter ($0.10) to find trends
-  ↓ pays BriefPuter ($0.20) to create brief
-  ↓ pays PFPputer ($0.50) to generate image
-  ↓ pays BroadcastPuter ($0.10) to post
-  ↓ keeps $0.10 profit
+Orchestrator Agent (receives budget)
+  ↓
+1. Get focus plan from Briefputer (identify keywords/topics)
+  ↓
+2. Get trending topics from Trendputer (investigate 10 trends)
+  ↓
+3. Select best trend using Briefputer (evaluate quality)
+  ↓
+4. Generate creative brief from Briefputer (strategy & angle)
+  ↓
+5. Enhance image prompt with Promptputer
+  ↓
+6. Generate image from PFPputer
+  ↓
+7. Describe image with ImageDescripterputer
+  ↓
+8. Generate captions from Captionputer
+  ↓
+9. Post to Telegram via Broadcastputer
 ```
 
-Each agent has its own wallet and makes autonomous decisions about:
-- Which agents to hire
-- How much to pay
-- Whether to accept or reject work
+Each step involves an x402 micropayment from the orchestrator's wallet to the specialized agent.
+
+## Autonomous Decisions
+
+The orchestrator makes autonomous decisions using AI:
+
+- **Trend Selection**: Uses Briefputer to evaluate and select the best trend from available options
+- **Brief Generation**: Decides whether a creative brief is needed based on context
+- **Quality Control**: Retries trend fetching if quality is insufficient
+
+The overall workflow is fixed, but the orchestrator adapts based on the quality and relevance of intermediate results.
 
 ## Agents Used
 
-The orchestrator agent coordinates the following specialized agents:
+The orchestrator coordinates these specialized agents:
 
-- **briefputer**: Focus planning, brief generation, trend evaluation
-- **trendputer**: Trend investigation
-- **promptputer**: Prompt enhancement
+- **briefputer**: Focus planning, trend evaluation, creative brief generation
+- **trendputer**: Trend investigation and discovery
+- **promptputer**: Image prompt enhancement
 - **pfpputer**: Image generation
 - **imagedescripterputer**: Image analysis and description
 - **captionputer**: Caption generation
-- **broadcastputer**: Social media posting
+- **broadcastputer**: Social media posting (Telegram)
 
 ## Quick Start
 
@@ -53,28 +72,17 @@ The orchestrator agent coordinates the following specialized agents:
 
 - Node.js >= 18.0.0
 - pnpm >= 8.0.0
-- Solana wallet with SOL and USDC for the orchestrator agent
-- Memeputer CLI installed
+- Solana wallet with SOL and USDC
 
 ### Setup
 
-1. **Fund the Orchestrator Agent Wallet**
-   ```bash
-   # The orchestrator agent needs its own wallet with USDC
-   # Create a wallet file: orchestrator-wallet.json
-   # Fund it with USDC (agents need USDC to pay other agents)
-   ```
-
-2. **Install dependencies**
+1. **Install dependencies**
    ```bash
    pnpm install
    ```
 
-3. **Configure** (create `.env` file in `examples/marketputer/`):
+2. **Configure** (create `.env` file in `examples/marketputer/`):
    ```bash
-   # Required: API endpoint
-   MEMEPUTER_API_BASE=http://localhost:3006
-   
    # Optional: Solana RPC (defaults to mainnet)
    SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
    
@@ -89,90 +97,92 @@ The orchestrator agent coordinates the following specialized agents:
    ORCHESTRATOR_AGENT_WALLET_SECRET=your-wallet-secret-here
    ```
 
+3. **Fund your wallet**
+   - Ensure your wallet has USDC for payments
+   - Ensure your wallet has SOL for transaction fees
+
 ### Run
 
 ```bash
-# Run a task - orchestrator agent will pay other agents
-# API base and RPC URL are read from .env automatically
-pnpm start run --task "Create a meme about Solana" --budget 1.0
+# Run the orchestrator agent
+pnpm start run --budget 1.0
 
-# Or override from command line if needed
-pnpm start run \
-  --task "Create a meme about Solana" \
-  --budget 1.0 \
-  --api-base http://localhost:3006 \
-  --rpc-url https://api.mainnet-beta.solana.com
+# The orchestrator will:
+# 1. Pay Briefputer to get focus plan
+# 2. Pay Trendputer to find trends
+# 3. Pay Briefputer to select best trend
+# 4. Pay Briefputer to generate brief
+# 5. Pay Promptputer to enhance prompt
+# 6. Pay PFPputer to generate image
+# 7. Pay ImageDescripterputer to describe image
+# 8. Pay Captionputer to generate captions
+# 9. Pay Broadcastputer to post to Telegram
+# All payments tracked with Solscan links
+```
 
-# The orchestrator agent will:
-# 1. Pay TrendPuter to find trends
-# 2. Pay BriefPuter to create a brief
-# 3. Pay PFPputer to generate image
-# 4. Pay BroadcastPuter to post
-# All from its own wallet!
+### With Brand Profile
+
+```bash
+# Use a brand profile for consistent voice/style
+pnpm start run --budget 1.0 --brand brands/memeputer.json
+```
+
+### Loop Mode
+
+```bash
+# Run continuously, creating a new meme every 60 seconds
+pnpm start run --budget 1.0 --loop --loop-delay 60
 ```
 
 ## How It Works
 
-### Current Implementation
+### Implementation
 
-This example uses a **client-side orchestrator** that simulates an agent:
+This is a **client-side orchestrator** that simulates an autonomous agent:
+
 - You provide a wallet with USDC (acts as the "orchestrator agent's wallet")
-- The client application calls other agents and pays them from that wallet
-- This demonstrates the pattern without needing to deploy a real agent
-
-### Agent Wallets
-
-Each agent has its own Solana wallet:
-- **Orchestrator Agent** (client-side): Uses your wallet to pay other agents
-- **TrendPuter**: Receives payment, provides trend data (existing agent)
-- **BriefPuter**: Receives payment, creates briefs (existing agent)
-- **PFPputer**: Receives payment, generates images (existing agent)
-- **BroadcastPuter**: Receives payment, posts content (may need to be created)
+- The client application autonomously coordinates multiple agents
+- Each agent call is paid via x402 micropayments
+- All payments are tracked and logged with Solscan links
 
 ### Payment Flow
 
-1. User funds orchestrator wallet (your wallet acts as the agent's wallet)
-2. Client application receives task + budget
-3. Client calls other agents using x402, paying from orchestrator wallet
+1. User provides wallet with USDC balance
+2. Orchestrator receives task and budget
+3. Orchestrator autonomously calls agents using x402, paying from its wallet
 4. Each agent receives payment in their wallet
+5. Orchestrator tracks spending and manages budget
 
-### To Create True Agent-to-Agent Economy
-
-For a **true agent-to-agent economy**, you would need to:
-
-1. **Deploy an Orchestrator Agent** on Memeputer platform:
-   - Agent receives tasks via API
-   - Has its own wallet with USDC
-   - Autonomously decides which agents to hire
-   - Pays other agents from its wallet
-
-2. **Create BroadcastPuter** (if it doesn't exist):
-   - Agent that accepts posting requests via x402
-   - Posts to Telegram/Farcaster
-   - Receives payment in its wallet
-
-### How This Works
-
-**Marketputer (orchestrator pattern)**:
-- Orchestrator agent receives task and budget
-- Orchestrator autonomously decides which agents to hire
-- Orchestrator pays agents from its own wallet using x402
-- Each agent receives payment and completes their task
-- Orchestrator → Agent 1 → Agent 2 → Agent 3 (all paid by orchestrator)
-
-## Architecture
+### Architecture
 
 ```
 src/
-  orchestrator-agent.ts    # Agent that pays other agents
-  agent-wallet.ts          # Wallet management for agents
-  task-runner.ts           # Runs tasks using agent economy
+  orchestrator-agent.ts    # Main orchestrator logic
   cli.ts                   # CLI interface
+  logger.ts                # Clean logging utility
+  types.ts                 # TypeScript types
+  step-by-step.ts          # Step-by-step testing CLI
 ```
+
+## Step-by-Step Testing
+
+For detailed testing and debugging, you can run individual steps:
+
+```bash
+# List available steps
+pnpm step-list
+
+# Run individual steps
+pnpm step0  # Get focus plan
+pnpm step3  # Get trends
+pnpm step4  # Select trend
+pnpm step6  # Generate brief
+```
+
+See `QUICK_START.md` for detailed step-by-step instructions.
 
 ## Learn More
 
 - [Memeputer Platform](https://memeputer.com)
 - [x402 Protocol](https://x402.dev)
 - [Marketplace](https://marketplace.memeputer.com)
-

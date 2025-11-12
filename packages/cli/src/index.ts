@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { createAskCommand } from "./commands/ask.js";
+import { createPromptCommand } from "./commands/prompt.js";
 import { createAgentsCommand } from "./commands/agents.js";
 import { createBalanceCommand } from "./commands/balance.js";
 import { commandCommand } from "./commands/command.js";
@@ -27,7 +27,7 @@ program
   .version(packageJson.version);
 
 // Add commands
-program.addCommand(createAskCommand());
+program.addCommand(createPromptCommand());
 program.addCommand(commandCommand);
 program.addCommand(createAgentsCommand());
 program.addCommand(createBalanceCommand());
@@ -36,7 +36,7 @@ program.addCommand(createBalanceCommand());
 program.on("--help", () => {
   console.log();
   console.log("Examples:");
-  console.log('  $ memeputer ask FINNPUTER "whats up"');
+  console.log('  $ memeputer prompt FINNPUTER "whats up"');
   console.log("  $ memeputer command rawgroundbeef ping");
   console.log(
     '  $ memeputer command rawgroundbeef pfp "a cool cyberpunk hacker"',

@@ -11,7 +11,7 @@
  * Future enhancement: Could use LLM reasoning for more sophisticated planning
  */
 import { Connection, Keypair } from '@solana/web3.js';
-import { AgentsApiClient, InteractionResult } from 'memeputer/dist/lib/api.js';
+import { AgentsApiClient, InteractionResult } from '@memeputer/sdk';
 import { BrandProfile } from './types';
 import { CleanLogger } from './logger';
 

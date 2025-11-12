@@ -20,7 +20,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { AgentsApiClient, InteractionResult } from 'memeputer/dist/lib/api.js';
+import { AgentsApiClient, InteractionResult } from '@memeputer/sdk';
 import { BrandProfile, BrandProfileSchema } from './types';
 
 // Extend InteractionResult to include x402Receipt and x402Quote

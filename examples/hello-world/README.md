@@ -121,7 +121,7 @@ All payment logic is handled automatically by the `AgentsApiClient`.
 
 ## Code Breakdown
 
-The main file (`hello-world.ts`) is now super clean:
+The main file (`prompt.ts`) is now super clean:
 
 ```typescript
 // Load wallet

@@ -11,7 +11,7 @@ import { Command } from 'commander';
 import { readFileSync, existsSync } from 'fs';
 import { join, homedir } from 'path';
 import { Keypair, Connection } from '@solana/web3.js';
-import { AgentsApiClient, InteractionResult } from 'memeputer/dist/lib/api.js';
+import { AgentsApiClient, InteractionResult } from '@memeputer/sdk';
 import axios from 'axios';
 
 interface InteractionResultWithReceipt extends InteractionResult {

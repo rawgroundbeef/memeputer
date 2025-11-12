@@ -18,42 +18,11 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
-  examples/agent-economy:
-    dependencies:
-      '@solana/web3.js':
-        specifier: ^1.98.4
-        version: 1.98.4(typescript@5.9.3)
-      axios:
-        specifier: ^1.7.7
-        version: 1.13.2
-      bs58:
-        specifier: ^6.0.0
-        version: 6.0.0
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
-      dotenv:
-        specifier: ^16.4.5
-        version: 16.6.1
-      memeputer:
-        specifier: ^1.1.3
-        version: link:../../packages/cli
-      ora:
-        specifier: ^8.0.1
-        version: 8.2.0
-    devDependencies:
-      '@types/node':
-        specifier: ^20.11.30
-        version: 20.19.24
-      tsx:
-        specifier: ^4.16.0
-        version: 4.20.6
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
-
   examples/hello-world:
     dependencies:
+      '@memeputer/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(typescript@5.9.3)
@@ -63,9 +32,6 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
-      memeputer:
-        specifier: ^1.1.3
-        version: link:../../packages/cli
     devDependencies:
       '@types/node':
         specifier: ^20.11.30
@@ -79,6 +45,9 @@ importers:
 
   examples/marketputer:
     dependencies:
+      '@memeputer/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(typescript@5.9.3)
@@ -94,15 +63,9 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
-      form-data:
-        specifier: ^4.0.0
-        version: 4.0.4
-      memeputer:
-        specifier: ^1.1.3
-        version: link:../../packages/cli
-      zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+      ora:
+        specifier: ^8.0.1
+        version: 8.2.0
     devDependencies:
       '@types/node':
         specifier: ^20.11.30
@@ -116,18 +79,9 @@ importers:
 
   packages/cli:
     dependencies:
-      '@solana/spl-token':
-        specifier: ^0.4.14
-        version: 0.4.14(@solana/web3.js@1.98.4)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
-      '@solana/web3.js':
-        specifier: ^1.98.4
-        version: 1.98.4(typescript@5.9.3)
-      axios:
-        specifier: ^1.6.5
-        version: 1.13.2
-      bs58:
-        specifier: ^5.0.0
-        version: 5.0.0
+      '@memeputer/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       chalk:
         specifier: ^5.3.0
         version: 5.6.2
@@ -140,9 +94,6 @@ importers:
       ora:
         specifier: ^8.0.1
         version: 8.2.0
-      x402-solana:
-        specifier: ^0.1.4
-        version: 0.1.4(@solana/spl-token@0.4.14)(@solana/sysvars@2.3.0)(@solana/web3.js@1.98.4)(@tanstack/react-query@5.90.7)(fastestsmallesttextencoderdecoder@1.0.22)(react@18.3.1)(typescript@5.9.3)(ws@8.18.3)(zod@4.1.12)
     devDependencies:
       '@types/node':
         specifier: ^20.10.6
@@ -150,6 +101,31 @@ importers:
       tsx:
         specifier: ^4.7.0
         version: 4.20.6
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+
+  packages/sdk:
+    dependencies:
+      '@solana/spl-token':
+        specifier: ^0.4.14
+        version: 0.4.14(@solana/web3.js@1.98.4)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
+      '@solana/web3.js':
+        specifier: ^1.98.4
+        version: 1.98.4(typescript@5.9.3)
+      axios:
+        specifier: ^1.6.5
+        version: 1.13.2
+      bs58:
+        specifier: ^5.0.0
+        version: 5.0.0
+      x402-solana:
+        specifier: ^0.1.4
+        version: 0.1.4(@solana/spl-token@0.4.14)(@solana/sysvars@2.3.0)(@solana/web3.js@1.98.4)(@tanstack/react-query@5.90.7)(fastestsmallesttextencoderdecoder@1.0.22)(react@18.3.1)(typescript@5.9.3)(ws@8.18.3)(zod@4.1.12)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.10.6
+        version: 20.19.24
       typescript:
         specifier: ^5.3.3
         version: 5.9.3

@@ -4,7 +4,7 @@ import ora, { Ora } from "ora";
 import chalk from "chalk";
 import fs from "fs";
 import path from "path";
-import { AgentsApiClient, StatusCheckResult } from "../lib/api.js";
+import { Memeputer, StatusCheckResult } from "@memeputer/sdk";
 import { loadConfig, getDefaultWalletPath } from "../lib/config.js";
 import { loadWallet, formatPublicKey } from "../lib/wallet.js";
 import { formatInfo } from "../utils/formatting.js";
@@ -123,13 +123,18 @@ export const commandCommand = new Command("command")
           ? null
           : ora(`Executing /${command} on ${agentId}...`).start();
 
-        const apiClient = new AgentsApiClient(apiUrl);
-        const result = await apiClient.interact(
-          agentId,
-          message,
+        const memeputer = new Memeputer({
+          apiUrl,
+          rpcUrl,
           wallet,
           connection,
-        );
+        });
+
+        const result = await memeputer.command({
+          agentId,
+          command,
+          params: commandParams,
+        });
 
         // Check if this is an async operation
         if (result.statusUrl) {
@@ -138,7 +143,7 @@ export const commandCommand = new Command("command")
           }
 
           // Poll for completion
-          const finalResult = await apiClient.pollStatus(result.statusUrl, {
+          const finalResult = await memeputer.pollStatus(result.statusUrl, {
             intervalMs: 5000,
             maxAttempts: 60,
             onProgress: (attempt: number, status: StatusCheckResult) => {

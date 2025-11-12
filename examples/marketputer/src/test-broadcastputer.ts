@@ -6,7 +6,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { Connection, Keypair } from '@solana/web3.js';
-import { AgentsApiClient, InteractionResult } from 'memeputer/dist/lib/api.js';
+import { AgentsApiClient, InteractionResult } from '@memeputer/sdk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
