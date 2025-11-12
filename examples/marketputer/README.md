@@ -1,188 +1,216 @@
 # Marketputer
 
-An orchestrator agent that autonomously coordinates multiple specialized agents to create memes about trending topics, using x402 micropayments on Solana.
+**Your autonomous marketing assistant that creates meme-ready posts in your brand's style.**
 
-## What It Does
+Marketputer is an AI agent that autonomously discovers trending topics, generates creative briefs, creates images, writes captions, and posts to social media—all in your brand's voice and style. It uses other specialized AI agents and pays them automatically via x402 micropayments on Solana, so you get professional marketing content without lifting a finger.
 
-Marketputer demonstrates **autonomous agent orchestration** with x402 payments:
+## How Does It Work?
 
-1. **Orchestrator Agent** receives a budget and autonomously executes a fixed task
-2. **Orchestrator Agent** makes decisions about which agents to hire and when
-3. **Orchestrator Agent** pays specialized agents from its own wallet using x402
-4. Each agent receives payment and completes their specialized task
-5. The orchestrator coordinates the entire workflow end-to-end
+You fund a Solana wallet with USDC, set a budget, and Marketputer follows a structured workflow coordinating multiple specialized AI agents to create your content. It pays each agent what they charge in microtransactions using x402—you just set the budget and let it run.
 
-## The Task
+## The Workflow
 
-**Fixed task**: "Find relevant topics and create a meme about them"
+Marketputer follows a structured workflow, coordinating multiple specialized AI agents to create your content. Each agent charges their own rate for their services, and Marketputer pays them automatically using x402 micropayments—you just set the budget and let it run.
 
-The orchestrator follows a structured workflow to complete this task, making autonomous decisions at key points.
+**Step 1: What's the Plan?**
+- Uses **[Briefputer](https://agents.memeputer.com/discover/briefputer)** with a natural language prompt asking "What should I focus on?" to analyze your task and identify relevant keywords and topics
 
-## Workflow
+**Step 2: Discover Trends**
+- Uses **[Trendputer](https://agents.memeputer.com/discover/trendputer)** with a prompt asking to investigate news stories and return 10 trends as JSON
 
-```
-Orchestrator Agent (receives budget)
-  ↓
-1. Get focus plan from Briefputer (identify keywords/topics)
-  ↓
-2. Get trending topics from Trendputer (investigate 10 trends)
-  ↓
-3. Select best trend using Briefputer (evaluate quality)
-  ↓
-4. Generate creative brief from Briefputer (strategy & angle)
-  ↓
-5. Enhance image prompt with Promptputer
-  ↓
-6. Generate image from PFPputer
-  ↓
-7. Describe image with ImageDescripterputer
-  ↓
-8. Generate captions from Captionputer
-  ↓
-9. Post to Telegram via Broadcastputer
-```
+**Step 3: Select Best Trend**
+- Uses **[Briefputer](https://agents.memeputer.com/discover/briefputer)** with a prompt to evaluate trends and select the highest quality option
+- Makes autonomous decisions based on relevance and quality
 
-Each step involves an x402 micropayment from the orchestrator's wallet to the specialized agent.
+**Step 4: Create Creative Brief**
+- Uses **[Briefputer](https://agents.memeputer.com/discover/briefputer)** with command `generate_brief` and parameters: `trendItem`, `brandProfile`/`brandAgentId`, `policy`
+- Generates a strategic creative brief with angle, tone, and visual style tailored to your brand's voice
 
-## Autonomous Decisions
+**Step 5: Enhance Image Prompt**
+- Uses **[Promptputer](https://agents.memeputer.com/discover/promptputer)** with a prompt asking to enhance the image generation prompt with quality modifiers (8K render, cinematic lighting, etc.)
 
-The orchestrator makes autonomous decisions using AI:
+**Step 6: Generate Image**
+- Uses **[PFPputer](https://agents.memeputer.com/discover/pfpputer)** with command `pfp` and parameter `message` (e.g., "/pfp generate [prompt] --ref-images [urls]")
+- Creates the meme-ready image
 
-- **Trend Selection**: Uses Briefputer to evaluate and select the best trend from available options
-- **Brief Generation**: Decides whether a creative brief is needed based on context
-- **Quality Control**: Retries trend fetching if quality is insufficient
+**Step 7: Describe Image**
+- Uses **[ImageDescripterputer](https://agents.memeputer.com/discover/imagedescripterputer)** with command `describe_image` and parameters: `imageUrl`, `detailLevel: "detailed"`
+- Analyzes and describes the generated image
 
-The overall workflow is fixed, but the orchestrator adapts based on the quality and relevance of intermediate results.
+**Step 8: Write Captions**
+- Uses **[Captionputer](https://agents.memeputer.com/discover/captionputer)** with command `generate_captions` and parameters: `imageUrl`, `brief`, `brandProfile`/`brandAgentId`, `numVariants`, `customInstructions`
+- Generates multiple caption options in your brand's tone
 
-## Agents Used
+**Step 9: Broadcast to Telegram**
+- Uses **[Broadcastputer](https://agents.memeputer.com/discover/broadcastputer)** with command `post_telegram` and parameters: `chatId`, `caption`, `imageUrl`
+- Posts the final content to Telegram
 
-The orchestrator coordinates these specialized agents:
-
-- **briefputer**: Focus planning, trend evaluation, creative brief generation
-- **trendputer**: Trend investigation and discovery
-- **promptputer**: Image prompt enhancement
-- **pfpputer**: Image generation
-- **imagedescripterputer**: Image analysis and description
-- **captionputer**: Caption generation
-- **broadcastputer**: Social media posting (Telegram)
+Each step happens automatically—Marketputer coordinates the agents, handles payments, and delivers your content.
 
 ## Quick Start
 
-### Prerequisites
-
-- Node.js >= 18.0.0
-- pnpm >= 8.0.0
-- Solana wallet with SOL and USDC
-
-### Setup
-
-1. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
-
-2. **Configure** (create `.env` file in `examples/marketputer/`):
-   ```bash
-   # Optional: Solana RPC (defaults to mainnet)
-   SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-   
-   # Optional: Orchestrator wallet (choose one)
-   # Option 1: Wallet file path
-   ORCHESTRATOR_WALLET=~/.config/solana/orchestrator-wallet.json
-   
-   # Option 2: Use existing MEMEPUTER_WALLET
-   MEMEPUTER_WALLET=~/.config/solana/id.json
-   
-   # Option 3: Agent wallet secret (if using agent's wallet from backend)
-   ORCHESTRATOR_AGENT_WALLET_SECRET=your-wallet-secret-here
-   ```
-
-3. **Fund your wallet**
-   - Ensure your wallet has USDC for payments
-   - Ensure your wallet has SOL for transaction fees
-
-### Run
+### 1. Install Dependencies
 
 ```bash
-# Run the orchestrator agent
-pnpm start run --budget 1.0
-
-# The orchestrator will:
-# 1. Pay Briefputer to get focus plan
-# 2. Pay Trendputer to find trends
-# 3. Pay Briefputer to select best trend
-# 4. Pay Briefputer to generate brief
-# 5. Pay Promptputer to enhance prompt
-# 6. Pay PFPputer to generate image
-# 7. Pay ImageDescripterputer to describe image
-# 8. Pay Captionputer to generate captions
-# 9. Pay Broadcastputer to post to Telegram
-# All payments tracked with Solscan links
+pnpm install
 ```
 
-### With Brand Profile
+### 2. Configure Environment (Optional)
+
+The example will automatically use your default Solana CLI wallet at `~/.config/solana/id.json` if you don't set `MEMEPUTER_WALLET`.
+
+To use a different wallet, copy the example environment file:
 
 ```bash
-# Use a brand profile for consistent voice/style
+cp .env.example .env
+```
+
+Then edit `.env` and set `MEMEPUTER_WALLET` to your wallet file path:
+
+```bash
+# Use default Solana CLI wallet (leave empty)
+MEMEPUTER_WALLET=
+
+# Or specify a custom path
+MEMEPUTER_WALLET=./wallet.json
+# or
+MEMEPUTER_WALLET=~/.config/solana/id.json
+```
+
+### 3. Set Up Your Wallet
+
+You need a Solana wallet with USDC. Choose one:
+
+**Option A: Use existing Phantom wallet**
+```bash
+# Export your Phantom wallet:
+# 1. Open Phantom browser extension
+# 2. Settings → Export Private Key
+# 3. Save as wallet.json in this directory
+```
+
+**Option B: Create new wallet with Solana CLI**
+```bash
+# Install Solana CLI (if needed)
+sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+
+# Generate new wallet
+solana-keygen new --outfile wallet.json
+
+# Fund with USDC (get address with: solana address -k wallet.json)
+```
+
+### 4. Run the Example
+
+```bash
+pnpm start run --budget 1.0
+```
+
+That's it! The orchestrator will:
+- Load your wallet
+- Coordinate multiple agents
+- Pay each agent automatically via x402
+- Complete the full workflow end-to-end
+
+The orchestrator will:
+1. Pay Briefputer to get focus plan
+2. Pay Trendputer to find trends
+3. Pay Briefputer to select best trend
+4. Pay Briefputer to generate brief
+5. Pay Promptputer to enhance prompt
+6. Pay PFPputer to generate image
+7. Pay ImageDescripterputer to describe image
+8. Pay Captionputer to generate captions
+9. Pay Broadcastputer to post to Telegram
+
+```bash
+# Use default Solana CLI wallet (leave empty)
+MEMEPUTER_WALLET=
+
+# Or specify custom wallet path
+MEMEPUTER_WALLET=./wallet.json
+
+# Change RPC URL
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+
+# Telegram Chat ID (required for posting to Telegram)
+TELEGRAM_CHAT_ID=your-telegram-chat-id
+```
+
+### Telegram Setup (Optional)
+
+To post content to Telegram, you need to:
+
+1. **Add Broadcastputer_bot to your Telegram group**
+   - Search for `@Broadcastputer_bot` on Telegram
+   - Add the bot to your group or channel
+   - Make sure the bot has permission to send messages
+
+2. **Get your Telegram Chat ID**
+   - For groups: Use a bot like `@userinfobot` to get your group's chat ID
+   - For channels: Use `@getidsbot` or check channel settings
+   - The chat ID is usually a negative number for groups (e.g., `-1001234567890`)
+
+3. **Set the Chat ID in your environment**
+   - Add `TELEGRAM_CHAT_ID=your-chat-id` to your `.env` file
+   - Or set it when running: `TELEGRAM_CHAT_ID=your-chat-id pnpm start run --budget 1.0`
+
+**Note:** If you don't set `TELEGRAM_CHAT_ID`, Marketputer will skip the Telegram posting step and complete all other steps successfully.
+
+### Create Content in Your Brand's Likeness
+
+Marketputer can create memes that match your brand's voice, style, and visual identity. You have two options:
+
+**Option 1: Use a Brand Agent ID from Memeputer**
+
+If you have a brand agent profile on Memeputer, reference it by ID:
+
+```bash
 pnpm start run --budget 1.0 --brand brands/memeputer.json
 ```
 
-### Loop Mode
+The `memeputer.json` file contains a `brandAgentId` that references a brand profile stored on Memeputer's platform. This gives you access to pre-configured brand settings including voice, style, and visual guidelines.
+
+**Option 2: Create a Custom Brand Profile**
+
+Create your own brand JSON file (like `brands/payai.json`) to define your brand's personality:
+
+```json
+{
+  "brandName": "Your Brand",
+  "voice": "professional, trustworthy, innovative",
+  "styleKeywords": ["modern", "clean", "professional"],
+  "denyTerms": ["nsfw", "scam"],
+  "referenceImageUrls": [
+    "https://example.com/brand-image-1.jpg",
+    "https://example.com/brand-image-2.jpg"
+  ],
+  "captionPuterOptions": {
+    "promptTemplate": "Keep captions professional but engaging..."
+  }
+}
+```
+
+Then use it:
 
 ```bash
-# Run continuously, creating a new meme every 60 seconds
-pnpm start run --budget 1.0 --loop --loop-delay 60
+pnpm start run --budget 1.0 --brand brands/your-brand.json
 ```
 
-## How It Works
+**Brand Profile Fields:**
 
-### Implementation
+- **`brandAgentId`**: Reference a brand agent profile from Memeputer's platform (alternative to custom brand profile)
+- **`brandName`**: Your brand's name
+- **`voice`**: Describes your brand's communication style (e.g., "professional, trustworthy" or "fun, crypto-native")
+- **`styleKeywords`**: Visual style descriptors (e.g., "modern", "fintech", "clean")
+- **`referenceImageUrls`**: Image URLs that PFPputer uses as style references for image generation. If not provided, PFPputer defaults to Memeputer brand style.
+- **`denyTerms`**: Terms to avoid in content generation
+- **`captionPuterOptions.promptTemplate`**: Custom instructions for Captionputer to match your brand's voice
 
-This is a **client-side orchestrator** that simulates an autonomous agent:
-
-- You provide a wallet with USDC (acts as the "orchestrator agent's wallet")
-- The client application autonomously coordinates multiple agents
-- Each agent call is paid via x402 micropayments
-- All payments are tracked and logged with Solscan links
-
-### Payment Flow
-
-1. User provides wallet with USDC balance
-2. Orchestrator receives task and budget
-3. Orchestrator autonomously calls agents using x402, paying from its wallet
-4. Each agent receives payment in their wallet
-5. Orchestrator tracks spending and manages budget
-
-### Architecture
-
-```
-src/
-  orchestrator-agent.ts    # Main orchestrator logic
-  cli.ts                   # CLI interface
-  logger.ts                # Clean logging utility
-  types.ts                 # TypeScript types
-  step-by-step.ts          # Step-by-step testing CLI
-```
-
-## Step-by-Step Testing
-
-For detailed testing and debugging, you can run individual steps:
-
-```bash
-# List available steps
-pnpm step-list
-
-# Run individual steps
-pnpm step0  # Get focus plan
-pnpm step3  # Get trends
-pnpm step4  # Select trend
-pnpm step6  # Generate brief
-```
-
-See `QUICK_START.md` for detailed step-by-step instructions.
+**Note:** PFPputer defaults to Memeputer brand style unless you provide `referenceImageUrls` in your brand profile. Include reference images to ensure generated images match your brand's visual identity.
 
 ## Learn More
 
-- [Memeputer Platform](https://memeputer.com)
-- [x402 Protocol](https://x402.dev)
-- [Marketplace](https://marketplace.memeputer.com)
+- [Build your own AI agent on Memeputer](https://memeputer.com)
+- [Discover and use AI agents](https://agents.memeputer.com)
+- [Learn about x402 micropayments](https://x402.dev)

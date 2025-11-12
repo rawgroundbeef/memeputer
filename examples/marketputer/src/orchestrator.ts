@@ -1,7 +1,7 @@
 /**
- * Orchestrator Agent - An Autonomous Agent-to-Agent Economy Demo
+ * Orchestrator - Coordinates and pays multiple specialized agents
  * 
- * This agent demonstrates agent-to-agent economy:
+ * This orchestrator demonstrates agent-to-agent economy:
  * - Receives a wallet with USDC balance
  * - Makes autonomous decisions about which agents to hire
  * - Pays other agents from the provided wallet
@@ -11,147 +11,23 @@
  * Future enhancement: Could use LLM reasoning for more sophisticated planning
  */
 import { Connection, Keypair } from '@solana/web3.js';
-import { AgentsApiClient, InteractionResult } from '@memeputer/sdk';
-import { BrandProfile } from './types';
+import { AgentsApiClient, Memeputer, PromptResult } from '@memeputer/sdk';
+import { OrchestratorConfig, TaskRequest, TaskResult } from './types';
 import { CleanLogger } from './logger';
-
-// Extend InteractionResult to include x402Receipt (until package is rebuilt)
-interface InteractionResultWithReceipt extends InteractionResult {
-  x402Receipt?: {
-    amountPaidUsdc: number;
-    amountPaidMicroUsdc: number;
-    payTo: string;
-    transactionSignature: string;
-    payer: string;
-    merchant: string;
-    timestamp: string;
-  };
-  x402Quote?: {
-    amountQuotedUsdc: number;
-    amountQuotedMicroUsdc: number;
-    maxAmountRequired: number;
-  };
-}
-
-// Helper to generate Solscan URLs
-function getSolscanTxUrl(signature: string, network: 'mainnet' | 'devnet' = 'mainnet'): string {
-  return `https://solscan.io/tx/${signature}`;
-}
-
-function getSolscanAccountUrl(address: string, network: 'mainnet' | 'devnet' = 'mainnet'): string {
-  return `https://solscan.io/account/${address}`;
-}
-
-function detectNetwork(rpcUrl: string): 'mainnet' | 'devnet' {
-  if (rpcUrl.includes('devnet')) return 'devnet';
-  return 'mainnet';
-}
-
-
-export interface OrchestratorAgentConfig {
-  wallet: Keypair;
-  connection: Connection;
-  apiBase: string;
-}
-
-export interface TaskRequest {
-  task: string;
-  budgetUsdc: number;
-  brandProfile?: BrandProfile; // Optional brand profile for voice/style
-}
-
-export interface TaskResult {
-  success: boolean;
-  totalSpent: number;
-  agentsHired: string[];
-  payments: Array<{
-    agentId: string;
-    command: string;
-    amount: number;
-    txId: string;
-  }>;
-  result?: string;
-  artifacts?: {
-    // Trend information
-    trends?: {
-      items: Array<{
-        id?: string;
-        title?: string;
-        summary?: string;
-        source?: string;
-        score?: number;
-        hashtags?: string[];
-        canonicalUrl?: string | null;
-      }>;
-      selectedTrend?: {
-        id?: string;
-        title?: string;
-        summary?: string;
-        source?: string;
-        score?: number;
-        hashtags?: string[];
-        canonicalUrl?: string | null;
-      };
-    } | null;
-    // Brief information
-    brief?: {
-      angle?: string;
-      tone?: string;
-      visualStyle?: string[];
-      callToAction?: string;
-      negativeConstraints?: string[];
-    } | null;
-    // Image generation details
-    imageGeneration?: {
-      prompt?: string;
-      imageUrl?: string | null;
-      imageHash?: string | null;
-      statusUrl?: string | null;
-      seed?: number | null;
-      guidance?: number | null;
-    } | null;
-    // Image description from ImageDescripterPuter
-    imageDescription?: {
-      description?: string;
-      style?: any | null;
-      composition?: any | null;
-      details?: any | null;
-    } | null;
-    // Caption information
-    caption?: {
-      text?: string;
-      hashtags?: string[];
-      disclaimer?: string | null;
-      length?: string;
-    } | null;
-    // Multiple caption options
-    captionOptions?: Array<{
-      text?: string;
-      hashtags?: string[];
-      disclaimer?: string | null;
-      length?: string;
-    }> | null;
-    // Social media posts
-    postedLinks?: {
-      telegram?: string;
-    } | null;
-    // Brand information used
-    brandProfile?: BrandProfile | null;
-  };
-  error?: string;
-}
+import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/utils';
 
 /**
- * OrchestratorAgent - An agent that pays other agents to complete tasks
+ * Orchestrator - Coordinates and pays multiple specialized agents to complete tasks
  * 
- * This demonstrates a true agent-to-agent economy where:
- * - The orchestrator agent has its own wallet with USDC
+ * This demonstrates an agent-to-agent economy where:
+ * - The orchestrator has its own wallet with USDC
  * - It autonomously decides which agents to hire
- * - It pays those agents from its own wallet
- * - Those agents may pay other agents (creating a network)
+ * - It pays those agents from its own wallet using x402 micropayments
+ * - The orchestrator coordinates the workflow and manages the budget
  */
-export class OrchestratorAgent {
+export class Orchestrator {
   private apiClient: AgentsApiClient;
+  private memeputer: Memeputer;
   private wallet: Keypair;
   private connection: Connection;
   private totalSpent: number = 0;
@@ -162,8 +38,13 @@ export class OrchestratorAgent {
   private logger: CleanLogger;
   private apiBase: string;
 
-  constructor(config: OrchestratorAgentConfig) {
+  constructor(config: OrchestratorConfig) {
     this.apiClient = new AgentsApiClient(config.apiBase);
+    this.memeputer = new Memeputer({
+      apiUrl: config.apiBase,
+      wallet: config.wallet,
+      connection: config.connection,
+    });
     this.wallet = config.wallet;
     this.connection = config.connection;
     this.network = detectNetwork(config.connection.rpcEndpoint);
@@ -196,8 +77,8 @@ export class OrchestratorAgent {
       let imageHash: string | null = null;
       let imageStatusUrl: string | null = null;
       
-      // Step 1: Ask AI what we should focus on (before getting trends)
-      this.logger.section('Step 1: Getting focus plan', 'briefputer');
+      // Step 1: What's the Plan?
+      this.logger.section('Step 1: What\'s the Plan?', 'briefputer');
       this.logger.startLoading('Processing...');
       const focusPlan = await this.whatShouldIFocusOn(fixedTask);
       this.logger.stopLoading();
@@ -206,8 +87,8 @@ export class OrchestratorAgent {
         this.logger.info(`Keywords: ${focusPlan.keywords.join(', ')}`);
       }
       
-      // Step 2: Always get trends
-      this.logger.section('Step 2: Getting trends', 'trendputer');
+      // Step 2: Discover Trends
+      this.logger.section('Step 2: Discover Trends', 'trendputer');
       
       // ADAPTIVE RETRY LOGIC: Try multiple times with different strategies if quality is poor
       let trendsAttempts = 0;
@@ -233,6 +114,7 @@ export class OrchestratorAgent {
           ? `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`
           : `Investigate the top news stories with a focus on verified, credible sources.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
         
+        // Step 2: Discover Trends - Uses Trendputer to investigate news stories and return 10 trends as JSON
         // No hardcoded amount - use remaining budget as safety limit
         // Actual payment comes from 402 quote
         const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
@@ -277,11 +159,11 @@ export class OrchestratorAgent {
           }
         }
         
-        // Agent evaluates trend quality and selects the best one
+        // Step 3: Select Best Trend
         // THE WOW FACTOR: The orchestrator agent hires BriefPuter to evaluate trends using AI reasoning
         // This demonstrates true autonomy - it uses AI reasoning (via another agent) instead of just heuristics
         if (trends?.items && trends.items.length > 0) {
-          this.logger.info(`Selecting best trend (agent: briefputer)`);
+          this.logger.section('Step 3: Select Best Trend', 'briefputer');
           this.logger.startLoading('Processing...');
           selectedTrend = await this.selectBestTrend(trends.items, fixedTask);
           this.logger.stopLoading();
@@ -320,11 +202,11 @@ export class OrchestratorAgent {
         }
       }
 
-      // Step 3: Generate brief
+      // Step 4: Create Creative Brief
       let brief: any = null;
       const hasGoodTrend = selectedTrend !== null;
       
-      this.logger.section('Step 3: Generating brief', 'briefputer');
+      this.logger.section('Step 4: Create Creative Brief', 'briefputer');
       
       // Use selected trend if available, otherwise use first trend or fallback
       const trendItem = selectedTrend || trends?.items?.[0] || {
@@ -367,6 +249,7 @@ export class OrchestratorAgent {
         this.logger.info(`Sending brandProfile to BriefPuter: ${brandProfile.brandName || 'Custom'}`);
       }
       
+      // Step 4: Create Creative Brief - Uses Briefputer with generate_brief command
       const briefResult = await this.hireAgent('briefputer', 'generate_brief', briefPayload);
       
       // Parse brief response
@@ -395,21 +278,22 @@ export class OrchestratorAgent {
         this.logger.warn('Failed to parse brief response');
       }
 
-      // Step 4: Enhance prompt with PromptPuter
+      // Step 5: Enhance Image Prompt
       let imageUrl: string | null = null;
       const hasBrief = brief?.brief?.angle !== null && brief?.brief?.angle !== undefined;
       
-      this.logger.section('Step 4: Enhancing image prompt', 'promptputer');
+      this.logger.section('Step 5: Enhance Image Prompt', 'promptputer');
       
       const basePrompt = brief?.brief?.angle || fixedTask;
       
+      // Step 5: Enhance Image Prompt - Uses Promptputer to enhance prompt with quality modifiers
       // Ask PromptPuter to enhance the prompt for high-quality image generation
       const enhancedPrompt = await this.enhanceImagePrompt(basePrompt);
       imagePrompt = enhancedPrompt; // Store enhanced prompt for admin info
       this.logger.result('✅', 'Prompt enhanced');
       
-      // Step 5: Generate image with PFPputer
-      this.logger.section('Step 5: Generating image', 'pfpputer');
+      // Step 6: Generate Image
+      this.logger.section('Step 6: Generate Image', 'pfpputer');
       
       // Build PFP command with reference images if brand has them
       let pfpCommand = `/pfp generate ${enhancedPrompt}`;
@@ -418,6 +302,7 @@ export class OrchestratorAgent {
         this.logger.info(`Using ${request.brandProfile.referenceImageUrls.length} reference image(s)`);
       }
       
+      // Step 6: Generate Image - Uses PFPputer with pfp command
       // No hardcoded amount - actual payment comes from 402 quote
       const imageResult = await this.hireAgent('pfpputer', 'pfp', {
         message: pfpCommand,
@@ -458,16 +343,17 @@ export class OrchestratorAgent {
         this.logger.warn('No image URL found in response');
       }
 
-      // Step 6: Describe image with ImageDescripterPuter (only if we have an image)
+      // Step 7: Describe Image
       let imageDescription: string | null = null;
       let imageDescriptionData: any = null;
       
       if (!imageUrl) {
         this.logger.warn('Skipping image description - no image was generated');
       } else {
-        this.logger.section('Step 6: Describing image', 'imagedescripterputer');
+        this.logger.section('Step 7: Describe Image', 'imagedescripterputer');
         
         try {
+          // Step 7: Describe Image - Uses ImageDescripterputer with describe_image command
           const descriptionResult = await this.hireAgent('imagedescripterputer', 'describe_image', {
             imageUrl: imageUrl,
             detailLevel: 'detailed',
@@ -576,7 +462,7 @@ export class OrchestratorAgent {
         }
       }
 
-      // Step 7: Generate captions with CaptionPuter (only if we have an image description)
+      // Step 8: Write Captions
       let caption: string | null = null;
       let captionData: any = null;
       let captionOptions: any[] = [];
@@ -584,7 +470,7 @@ export class OrchestratorAgent {
       if (!imageDescription) {
         this.logger.warn('Skipping caption generation - no image description available');
       } else {
-        this.logger.section('Step 7: Generating captions', 'captionputer');
+        this.logger.section('Step 8: Write Captions', 'captionputer');
         const captionTrendItem = trends?.items?.[0] || {
           title: fixedTask,
           summary: fixedTask,
@@ -626,6 +512,7 @@ export class OrchestratorAgent {
             captionPayload.brandProfile = captionBrandProfile;
           }
           
+          // Step 8: Write Captions - Uses Captionputer with generate_captions command
           const captionResult = await this.hireAgent('captionputer', 'generate_captions', captionPayload);
           
           try {
@@ -671,7 +558,7 @@ export class OrchestratorAgent {
         }
       }
 
-      // Step 8: Post to Telegram (only if we have both image and caption)
+      // Step 9: Broadcast to Telegram
       let postedLinks: { telegram?: string } = {};
       
       if (!imageUrl) {
@@ -679,7 +566,7 @@ export class OrchestratorAgent {
       } else if (!caption) {
         this.logger.warn('Skipping Telegram post - no caption was generated');
       } else {
-        this.logger.section('Step 8: Posting to Telegram', 'broadcastputer');
+        this.logger.section('Step 9: Broadcast to Telegram', 'broadcastputer');
         // BroadcastPuter uses its own configured bot token, we just need chat ID
         // Default to Memeputer chat if not specified
         const telegramChatId = process.env.TELEGRAM_CHAT_ID || process.env.MEMEPUTER_TELEGRAM_CHAT_ID;
@@ -706,6 +593,7 @@ export class OrchestratorAgent {
             );
             
             try {
+              // Step 9: Broadcast to Telegram - Uses Broadcastputer with post_telegram command
               // No hardcoded amount - actual payment comes from 402 quote
               const telegramResult = await this.hireAgent('broadcastputer', 'post_telegram', {
                 chatId: telegramChatId,
@@ -890,7 +778,7 @@ export class OrchestratorAgent {
     command: string,
     payload: any,
     maxBudgetUsdc?: number // Optional safety limit - defaults to remaining budget
-  ): Promise<InteractionResultWithReceipt> {
+  ): Promise<PromptResult> {
     // Use provided limit or remaining budget as safety limit
     const remainingBudget = this.taskBudget - this.totalSpent;
     const safetyLimit = maxBudgetUsdc ?? remainingBudget;
@@ -920,12 +808,11 @@ export class OrchestratorAgent {
       }
 
       // Call the agent using x402 - the orchestrator agent pays!
-      const result = await this.apiClient.interact(
+      // Using SDK prompt method (first instance migrated)
+      const result = await this.memeputer.prompt(
         agentId,
-        message,
-        this.wallet, // Orchestrator's wallet pays the agent
-        this.connection
-      ) as InteractionResultWithReceipt;
+        message
+      );
       
       this.logger.stopLoading(`Paid ${agentId}`);
 
@@ -987,9 +874,9 @@ export class OrchestratorAgent {
   }
 
   /**
-   * Select the best trend from a list using AI-powered evaluation
-   * The orchestrator agent asks itself (via API) to evaluate trends and pick the best one
-   * This demonstrates true autonomy - the agent uses its own reasoning capabilities
+   * Step 3: Select Best Trend
+   * Uses Briefputer to evaluate trends and select the highest quality option
+   * Makes autonomous decisions based on relevance and quality
    */
   private async selectBestTrend(trends: any[], task: string): Promise<any | null> {
     if (!trends || trends.length === 0) {
@@ -1021,19 +908,16 @@ Please evaluate these trends and tell me which ONE is the best fit. Consider:
 Respond with ONLY the number (1-${trends.length}) of the best trend. If none are suitable, respond with "0".`;
 
     try {
-      // The orchestrator agent pays BriefPuter to evaluate trends
-      // This demonstrates agent-to-agent collaboration for decision-making
-      const evaluationResult = await this.apiClient.interact(
+      // Step 3: Select Best Trend - Uses Briefputer to evaluate trends and select highest quality option
+      const evaluationResult = await this.memeputer.prompt(
         'briefputer',
-        evaluationPrompt, // Send the prompt directly as a message
-        this.wallet, // Pay from orchestrator's wallet
-        this.connection
+        evaluationPrompt
       );
       
       // Track this payment - use actual cost from receipt
       if (evaluationResult.transactionSignature) {
-        const actualAmount = (evaluationResult as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01;
-        const paymentAmount = (evaluationResult as InteractionResultWithReceipt).x402Quote?.amountQuotedUsdc || actualAmount;
+        const actualAmount = evaluationResult.x402Receipt?.amountPaidUsdc || 0.01;
+        const paymentAmount = evaluationResult.x402Quote?.amountQuotedUsdc || actualAmount;
         this.totalSpent += actualAmount;
         this.agentsHired.push('briefputer');
         this.payments.push({
@@ -1044,8 +928,8 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
         });
         
         // Log payment
-        const payer = (evaluationResult as InteractionResultWithReceipt).x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = (evaluationResult as InteractionResultWithReceipt).x402Receipt?.merchant || (evaluationResult as InteractionResultWithReceipt).x402Receipt?.payTo || '';
+        const payer = evaluationResult.x402Receipt?.payer || this.wallet.publicKey.toString();
+        const merchant = evaluationResult.x402Receipt?.merchant || evaluationResult.x402Receipt?.payTo || '';
         
         this.logger.payment({
           agentId: 'briefputer',
@@ -1056,7 +940,7 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
           fromWalletUrl: getSolscanAccountUrl(payer, this.network),
           toWallet: merchant,
           toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: (evaluationResult as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc,
+          receiptAmount: evaluationResult.x402Receipt?.amountPaidUsdc,
         });
       }
       
@@ -1145,7 +1029,8 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
   }
 
   /**
-   * Step 0: Ask AI what we should focus on before getting trends
+   * Step 1: What's the Plan?
+   * Uses Briefputer to analyze the task and identify relevant keywords and topics
    * This helps TrendPuter know what keywords/topics to investigate
    */
   private async whatShouldIFocusOn(task: string): Promise<{
@@ -1170,16 +1055,13 @@ Respond in this exact JSON format:
 }`;
 
     try {
-      const result = await this.apiClient.interact(
-        'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
-      );
+      // Step 1: What's the Plan?
+      // Use Briefputer to analyze task and identify keywords/topics
+      const result = await this.memeputer.prompt('briefputer', prompt);
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01;
-        const paymentAmount = (result as InteractionResultWithReceipt).x402Quote?.amountQuotedUsdc || actualAmount;
+        const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01;
+        const paymentAmount = result.x402Quote?.amountQuotedUsdc || actualAmount;
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1189,8 +1071,8 @@ Respond in this exact JSON format:
         });
         
         // Log payment
-        const payer = (result as InteractionResultWithReceipt).x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = (result as InteractionResultWithReceipt).x402Receipt?.merchant || (result as InteractionResultWithReceipt).x402Receipt?.payTo || '';
+        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
+        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
         
         this.logger.payment({
           agentId: 'briefputer',
@@ -1201,7 +1083,7 @@ Respond in this exact JSON format:
           fromWalletUrl: getSolscanAccountUrl(payer, this.network),
           toWallet: merchant,
           toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc,
+          receiptAmount: result.x402Receipt?.amountPaidUsdc,
         });
       }
 
@@ -1260,15 +1142,13 @@ Respond in this exact JSON format:
 }`;
 
     try {
-      const result = await this.apiClient.interact(
+      const result = await this.memeputer.prompt(
         'briefputer',
-        prompt,
-        this.wallet,
-        this.connection
+        prompt
       );
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
+        const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1328,7 +1208,7 @@ Respond with ONLY "yes" (retry) or "no" (proceed without trends).`;
       );
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
+        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1383,7 +1263,7 @@ Respond with ONLY "yes" or "no".`;
       );
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
+        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1409,8 +1289,8 @@ Respond with ONLY "yes" or "no".`;
   }
 
   /**
-   * Enhance image prompt using PromptPuter to create a high-quality, detailed prompt
-   * This demonstrates agent-to-agent collaboration for prompt engineering
+   * Step 5: Enhance Image Prompt
+   * Uses Promptputer to refine and enhance the image generation prompt with quality modifiers
    */
   private async enhanceImagePrompt(basePrompt: string): Promise<string> {
     const enhancementPrompt = `I need to create a high-quality image generation prompt.
@@ -1426,12 +1306,11 @@ Please enhance this prompt to create a detailed, artistic, high-quality image ge
 Make it compelling and detailed while keeping the core concept. Return ONLY the enhanced prompt, nothing else.`;
 
     try {
-      const result = await this.apiClient.interact(
+      // Step 5: Enhance Image Prompt - Uses Promptputer to enhance prompt with quality modifiers
+      const result = await this.memeputer.prompt(
         'promptputer',
-        enhancementPrompt,
-        this.wallet,
-        this.connection
-      ) as InteractionResultWithReceipt;
+        enhancementPrompt
+      );
 
       if (result.transactionSignature) {
         const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01;
@@ -1499,7 +1378,7 @@ Respond with ONLY "yes" or "no".`;
       );
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
+        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1558,7 +1437,7 @@ Respond with ONLY "yes" or "no".`;
       );
 
       if (result.transactionSignature) {
-        const actualAmount = (result as InteractionResultWithReceipt).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
+        const actualAmount = (result as PromptResult).x402Receipt?.amountPaidUsdc || 0.01; // Fallback if no receipt
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'briefputer',
@@ -1783,7 +1662,7 @@ Respond with ONLY "yes" or "no".`;
    * Get current balance (for monitoring)
    */
   async getBalance(): Promise<number> {
-    const { getUsdcBalance } = await import('memeputer/dist/lib/x402Client.js');
+    const { getUsdcBalance } = await import('@memeputer/sdk');
     return getUsdcBalance(this.connection, this.wallet);
   }
 }

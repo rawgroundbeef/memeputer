@@ -6,7 +6,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { OrchestratorAgent } from './orchestrator-agent';
+import { Orchestrator } from './orchestrator';
 import { BrandProfile, BrandProfileSchema } from './types';
 
 const program = new Command();
@@ -23,7 +23,7 @@ program
   .requiredOption('--budget <usdc>', 'Budget in USDC for the orchestrator agent')
   .option('--brand <path>', 'Path to brand config JSON file (supports brandAgentId or brandProfile)')
   .option('--agent-id <id>', 'Orchestrator agent ID (default: 1e7d0044-10c6-4036-9903-6ea995be82ec)')
-  .option('--orchestrator-wallet <path>', 'Path to orchestrator agent wallet JSON file (or set MEMEPUTER_WALLET in .env)')
+  .option('--wallet <path>', 'Path to wallet JSON file (defaults to ~/.config/solana/id.json or set MEMEPUTER_WALLET in .env)')
   .option('--api-base <url>', 'Memeputer API base URL (or set MEMEPUTER_API_BASE in .env)')
   .option('--rpc-url <url>', 'Solana RPC URL (or set SOLANA_RPC_URL in .env)')
   .option('--loop', 'Run continuously in a loop (press Ctrl+C to stop)')
@@ -40,73 +40,45 @@ program
         console.log('⚠️  Note: --task option is deprecated. Task is now fixed to: "Find relevant topics and create a meme about them"');
       }
       
-      // Load orchestrator wallet from local file
-      // Note: In open source, we can't expose wallet secret keys from the backend
-      // So we use a local wallet file that represents the orchestrator agent's wallet
-      let wallet: Keypair;
-      let walletPath = opts.orchestratorWallet;
-      
-      if (!walletPath) {
-        // Try env vars (check multiple common names)
-        walletPath = process.env.ORCHESTRATOR_WALLET || 
-                     process.env.MEMEPUTER_WALLET || 
-                     process.env.WALLET_SECRET_KEY;
+      // Load wallet - defaults to ~/.config/solana/id.json (same as hello-world)
+      function getDefaultWalletPath(): string {
+        return join(homedir(), '.config', 'solana', 'id.json');
       }
       
-      if (!walletPath) {
-        // Try RC file
-        const rcPath = join(homedir(), '.memeputerrc');
-        if (existsSync(rcPath)) {
-          try {
-            const rcContent = readFileSync(rcPath, 'utf-8');
-            const rcConfig = JSON.parse(rcContent);
-            if (rcConfig.orchestratorWallet) {
-              walletPath = rcConfig.orchestratorWallet;
-            }
-          } catch {
-            // Silently fail
-          }
+      function expandPath(path: string): string {
+        if (path.startsWith('~/')) {
+          return join(homedir(), path.slice(2));
         }
+        if (path === '~') {
+          return homedir();
+        }
+        if (path.startsWith('~')) {
+          return join(homedir(), path.slice(1));
+        }
+        return path;
       }
       
-      if (!walletPath) {
-        console.error('❌ Error: Could not find orchestrator agent wallet');
-        console.error('\nPlease provide the orchestrator wallet using one of these methods:');
-        console.error('  1. Use --orchestrator-wallet <path> flag');
-        console.error('  2. Set MEMEPUTER_WALLET or ORCHESTRATOR_WALLET in .env file');
-        console.error('  3. Create ~/.memeputerrc with: {"orchestratorWallet": "/path/to/wallet.json"}');
-        console.error('\nNote: The orchestrator agent needs USDC to pay other agents!');
-        process.exit(1);
-      }
+      function loadWallet(walletPath: string): Keypair {
+        const expandedPath = expandPath(walletPath);
+        
+        if (!existsSync(expandedPath)) {
+          throw new Error(`Wallet file not found: ${expandedPath}`);
+        }
 
-      // Expand tilde (~) in path to home directory
-      if (walletPath.startsWith('~/')) {
-        walletPath = walletPath.replace('~', homedir());
-      }
-
-      // Load wallet
-      try {
-        // First check if it's a file path
-        if (existsSync(walletPath)) {
-          const walletContent = readFileSync(walletPath, 'utf-8');
-          const walletData = JSON.parse(walletContent);
-          wallet = Keypair.fromSecretKey(new Uint8Array(walletData));
+        const walletData = JSON.parse(readFileSync(expandedPath, 'utf-8'));
+        
+        if (Array.isArray(walletData)) {
+          return Keypair.fromSecretKey(Uint8Array.from(walletData));
+        } else if (typeof walletData === 'string') {
+          return Keypair.fromSecretKey(bs58.decode(walletData));
         } else {
-          // Try as base58 encoded string or JSON string
-          try {
-            const walletData = JSON.parse(walletPath);
-            wallet = Keypair.fromSecretKey(new Uint8Array(walletData));
-          } catch {
-            wallet = Keypair.fromSecretKey(bs58.decode(walletPath));
-          }
+          throw new Error('Invalid wallet format');
         }
-      } catch (error) {
-        throw new Error(
-          `Failed to load wallet. ` +
-          `Path "${walletPath}" is neither a valid file path nor a base58-encoded secret key. ` +
-          `Original error: ${error instanceof Error ? error.message : String(error)}`
-        );
       }
+      
+      // Get wallet path: flag > env var > default Solana CLI wallet
+      const walletPath = opts.wallet || process.env.MEMEPUTER_WALLET || getDefaultWalletPath();
+      const wallet = loadWallet(walletPath);
       
       // Get RPC URL
       const rpcUrl = opts.rpcUrl || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -174,8 +146,8 @@ program
 
       const connection = new Connection(rpcUrl, 'confirmed');
       
-      // Create orchestrator agent
-      const orchestrator = new OrchestratorAgent({
+      // Create orchestrator
+      const orchestrator = new Orchestrator({
         wallet,
         connection,
         apiBase,
@@ -183,17 +155,18 @@ program
 
       // Run the task
       console.log('🚀 Starting execution...');
-      console.log('   The orchestrator agent will discover trending topics');
+      console.log('   The orchestrator will discover trending topics');
       console.log('   and create a meme about them.');
       console.log('\n📋 Execution Plan:');
-      console.log('   1. Get focus plan from Briefputer (identify keywords/topics)');
-      console.log('   2. Get trending topics from Trendputer (investigate 10 trends)');
-      console.log('   3. Generate creative brief from Briefputer (strategy & angle)');
-      console.log('   4. Enhance image prompt with Promptputer');
-      console.log('   5. Generate image from PFPputer');
-      console.log('   6. Describe image with ImageDescripterputer');
-      console.log('   7. Generate captions from Captionputer');
-      console.log('   8. Post to Telegram via Broadcastputer');
+      console.log('   1. What\'s the Plan? - Briefputer analyzes task and identifies keywords/topics');
+      console.log('   2. Discover Trends - Trendputer investigates 10 trending topics');
+      console.log('   3. Select Best Trend - Briefputer evaluates and selects highest quality trend');
+      console.log('   4. Create Creative Brief - Briefputer generates strategic brief with angle, tone, and style');
+      console.log('   5. Enhance Image Prompt - Promptputer refines prompt with quality modifiers');
+      console.log('   6. Generate Image - PFPputer creates meme-ready image');
+      console.log('   7. Describe Image - ImageDescripterputer analyzes and describes the image');
+      console.log('   8. Write Captions - Captionputer generates multiple caption options');
+      console.log('   9. Broadcast to Telegram - Broadcastputer posts final content');
       console.log('\n💸 Each step involves paying agents via x402 micropayments');
       console.log('   All payments tracked with Solscan links\n');
 

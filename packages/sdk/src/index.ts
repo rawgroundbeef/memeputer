@@ -219,6 +219,8 @@ export type {
   X402Receipt,
 } from "./api.js";
 
+// PromptResult and CommandResult are already exported as interfaces above
+
 export { AgentsApiClient } from "./api.js";
 export { getUsdcBalance } from "./x402Client.js";
 

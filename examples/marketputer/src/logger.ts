@@ -8,6 +8,17 @@ export class CleanLogger {
   private currentSpinner: Ora | null = null;
 
   /**
+   * Check if stdin is available for spinner (can change during shutdown)
+   */
+  private isTTYAvailable(): boolean {
+    try {
+      return process.stdin.isTTY && process.stdin.readable && !process.stdin.destroyed;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Log a section title (step header)
    * Example: "Step 1: Getting focus plan"
    * Agent name is shown separately
@@ -15,7 +26,11 @@ export class CleanLogger {
   section(title: string, agent?: string): void {
     // Stop any existing spinner
     if (this.currentSpinner) {
-      this.currentSpinner.stop();
+      try {
+        this.currentSpinner.stop();
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+      }
       this.currentSpinner = null;
     }
     
@@ -31,18 +46,35 @@ export class CleanLogger {
    * Start a loading spinner for a section
    * Returns the spinner so it can be stopped later
    */
-  startLoading(text: string): Ora {
+  startLoading(text: string): Ora | null {
     // Stop any existing spinner
     if (this.currentSpinner) {
-      this.currentSpinner.stop();
+      try {
+        this.currentSpinner.stop();
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+      }
     }
     
-    this.currentSpinner = ora({
-      text: `   ${text}`,
-      spinner: 'dots',
-    }).start();
+    // Only use spinner if stdin is available (TTY)
+    if (!this.isTTYAvailable()) {
+      console.log(`   ${text}...`);
+      return null;
+    }
     
-    return this.currentSpinner;
+    try {
+      this.currentSpinner = ora({
+        text: `   ${text}`,
+        spinner: 'dots',
+        stream: process.stdout, // Explicitly use stdout
+      }).start();
+      
+      return this.currentSpinner;
+    } catch (e) {
+      // If spinner fails (e.g., EIO error), fall back to plain text
+      console.log(`   ${text}...`);
+      return null;
+    }
   }
 
   /**
@@ -50,10 +82,17 @@ export class CleanLogger {
    */
   stopLoading(successText?: string): void {
     if (this.currentSpinner) {
-      if (successText) {
-        this.currentSpinner.succeed(`   ${successText}`);
-      } else {
-        this.currentSpinner.stop();
+      try {
+        if (successText) {
+          this.currentSpinner.succeed(`   ${successText}`);
+        } else {
+          this.currentSpinner.stop();
+        }
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+        if (successText) {
+          console.log(`   ✅ ${successText}`);
+        }
       }
       this.currentSpinner = null;
     }
@@ -64,7 +103,12 @@ export class CleanLogger {
    */
   failLoading(failText: string): void {
     if (this.currentSpinner) {
-      this.currentSpinner.fail(`   ${failText}`);
+      try {
+        this.currentSpinner.fail(`   ${failText}`);
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+        console.log(`   ❌ ${failText}`);
+      }
       this.currentSpinner = null;
     }
   }
@@ -76,7 +120,11 @@ export class CleanLogger {
   result(icon: string, message: string): void {
     // Stop any spinner first
     if (this.currentSpinner) {
-      this.currentSpinner.stop();
+      try {
+        this.currentSpinner.stop();
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+      }
       this.currentSpinner = null;
     }
     
@@ -99,7 +147,11 @@ export class CleanLogger {
   }): void {
     // Stop any spinner first
     if (this.currentSpinner) {
-      this.currentSpinner.stop();
+      try {
+        this.currentSpinner.stop();
+      } catch (e) {
+        // Ignore errors when stopping spinner (e.g., stdin unavailable)
+      }
       this.currentSpinner = null;
     }
     

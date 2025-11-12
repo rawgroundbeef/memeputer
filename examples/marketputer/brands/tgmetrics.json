@@ -1,0 +1,51 @@
+{
+    "brandName": "tgmetrics",
+    "voice": "data-driven, objective, insightful, growth-focused, crypto-native",
+    "styleKeywords": [
+        "analytics",
+        "telegram",
+        "crypto",
+        "clean",
+        "modern",
+        "professional"
+    ],
+    "allowTerms": [
+        "Telegram",
+        "growth",
+        "metrics",
+        "analytics",
+        "rankings",
+        "investors",
+        "communities",
+        "launchpads",
+        "blips"
+    ],
+    "denyTerms": [
+        "nsfw",
+        "scam",
+        "gambling",
+        "price prediction",
+        "financial advice",
+        "pump and dump"
+    ],
+    "disclaimer": "Not financial advice. Do your own research.",
+    "primaryColor": "#0EA5E9",
+    "emojiPack": [
+        "📈",
+        "📊",
+        "🔍",
+        "🚀",
+        "🏆",
+        "🤖"
+    ],
+    "referenceImageUrls": [
+        "https://auth.memeputer.com/storage/v1/object/public/pfp_uploads/cdb2eb7f-3805-43c1-94bc-ba7d4fd768db/84cf0799-2b1d-4d7e-ba86-3f10f52c6b7b/1761227145423.jpg",
+        "https://auth.memeputer.com/storage/v1/object/public/pfp_uploads/cdb2eb7f-3805-43c1-94bc-ba7d4fd768db/84cf0799-2b1d-4d7e-ba86-3f10f52c6b7b/1761227146357.png",
+        "https://auth.memeputer.com/storage/v1/object/public/pfp_uploads/cdb2eb7f-3805-43c1-94bc-ba7d4fd768db/84cf0799-2b1d-4d7e-ba86-3f10f52c6b7b/1761227147534.png",
+        "https://auth.memeputer.com/storage/v1/object/public/pfp_uploads/cdb2eb7f-3805-43c1-94bc-ba7d4fd768db/84cf0799-2b1d-4d7e-ba86-3f10f52c6b7b/1761497906825.png",
+        "https://auth.memeputer.com/storage/v1/object/public/pfp_uploads/cdb2eb7f-3805-43c1-94bc-ba7d4fd768db/84cf0799-2b1d-4d7e-ba86-3f10f52c6b7b/1761497906256.png"
+    ],
+    "captionPuterOptions": {
+        "promptTemplate": "Focus on tgmetrics and Telegram community analytics, growth insights, and investor discovery. Keep tone objective, concise, and data-driven. Include relevant analytics emojis. Avoid hype, price calls, or financial advice."
+    }
+}

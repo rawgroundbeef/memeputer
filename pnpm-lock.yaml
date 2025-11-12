@@ -21,7 +21,7 @@ importers:
   examples/hello-world:
     dependencies:
       '@memeputer/sdk':
-        specifier: workspace:*
+        specifier: ^1.0.0
         version: link:../../packages/sdk
       '@solana/web3.js':
         specifier: ^1.98.4
@@ -46,7 +46,7 @@ importers:
   examples/marketputer:
     dependencies:
       '@memeputer/sdk':
-        specifier: workspace:*
+        specifier: ^1.0.0
         version: link:../../packages/sdk
       '@solana/web3.js':
         specifier: ^1.98.4
