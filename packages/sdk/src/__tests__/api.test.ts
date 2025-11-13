@@ -31,17 +31,17 @@ describe('AgentsApiClient - x402 Protocol', () => {
     vi.restoreAllMocks();
   });
 
-  describe('Atomic Units Parsing', () => {
-    it('should parse atomic units correctly for 0.01 USDC (10000 micro-USDC)', async () => {
-      // Mock 402 response with atomic units
+  describe('Decimal Amount Parsing (x402 Spec)', () => {
+    it('should parse decimal USDC amount correctly for 0.01 USDC', async () => {
+      // Mock 402 response with decimal USDC amount per x402 spec
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '10000', // 0.01 USDC in atomic units
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.01', // Decimal USDC per x402 spec
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -69,15 +69,15 @@ describe('AgentsApiClient - x402 Protocol', () => {
       expect(result.response).toBe('Payment processed');
     });
 
-    it('should parse atomic units correctly for 0.10 USDC (100000 micro-USDC)', async () => {
+    it('should parse decimal USDC amount correctly for 0.10 USDC', async () => {
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '100000', // 0.10 USDC in atomic units
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.10', // Decimal USDC per x402 spec
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -108,15 +108,15 @@ describe('AgentsApiClient - x402 Protocol', () => {
       expect(result.x402Receipt?.amountPaidMicroUsdc).toBe(100000);
     });
 
-    it('should parse atomic units correctly for 1.0 USDC (1000000 micro-USDC)', async () => {
+    it('should parse decimal USDC amount correctly for 1.0 USDC', async () => {
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '1000000', // 1.0 USDC in atomic units
+            network: 'solana-mainnet',
+            maxAmountRequired: '1.00', // Decimal USDC per x402 spec
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -141,15 +141,15 @@ describe('AgentsApiClient - x402 Protocol', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should handle edge case: 0.5 USDC (500000 micro-USDC)', async () => {
+    it('should handle edge case: 0.5 USDC decimal', async () => {
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '500000', // 0.5 USDC in atomic units
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.50', // Decimal USDC per x402 spec
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -181,8 +181,8 @@ describe('AgentsApiClient - x402 Protocol', () => {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            // maxAmountRequired missing - should default to 10000
+            network: 'solana-mainnet',
+            // maxAmountRequired missing - should default to "0.01"
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -218,8 +218,8 @@ describe('AgentsApiClient - x402 Protocol', () => {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '10000',
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.01',
             resource: customResourceUrl, // Custom resource URL
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -254,8 +254,8 @@ describe('AgentsApiClient - x402 Protocol', () => {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '10000',
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.01',
             // resource field missing
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -285,15 +285,15 @@ describe('AgentsApiClient - x402 Protocol', () => {
   });
 
   describe('Network Identifier', () => {
-    it('should use "sol" as network identifier per x402 spec', async () => {
+    it('should use "solana-mainnet" as network identifier per x402 spec', async () => {
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol', // New x402 spec uses "sol" not "solana"
-            maxAmountRequired: '10000',
+            network: 'solana-mainnet', // Official x402 spec uses "{blockchain}-mainnet" format
+            maxAmountRequired: '0.01',
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -318,15 +318,15 @@ describe('AgentsApiClient - x402 Protocol', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should default to "sol" if network is missing', async () => {
+    it('should default to "solana-mainnet" if network is missing', async () => {
       const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            // network missing - should default to "sol"
-            maxAmountRequired: '10000',
+            // network missing - should default to "solana-mainnet"
+            maxAmountRequired: '0.01',
             resource: 'https://agents.api.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -370,14 +370,14 @@ describe('AgentsApiClient - x402 Protocol', () => {
     });
 
     it('should throw error if payTo is missing', async () => {
-      const mock402Response = {
+        const mock402Response = {
         status: 402,
         data: {
           x402Version: 1,
           accepts: [{
             scheme: 'exact',
-            network: 'sol',
-            maxAmountRequired: '10000',
+            network: 'solana-mainnet',
+            maxAmountRequired: '0.01',
             resource: 'https://agents.api.memeputer.com/x402/interact',
             // payTo missing
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',

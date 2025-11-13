@@ -13,6 +13,9 @@
 import memeputer from "@memeputer/sdk";
 import { loadConfig } from "./lib/config";
 import { showPaymentDetails } from "./lib/payment";
+import { loadWallet } from "./lib/wallet";
+import { checkBalance } from "./lib/balance";
+import { Connection } from "@solana/web3.js";
 
 // Load configuration
 const config = loadConfig();
@@ -24,17 +27,22 @@ memeputer.enableVerbose();
 const message = process.argv[2] || config.message;
 
 async function main() {
-  // Step 1: Show user message
+  // Step 1: Check wallet balance
+  const wallet = loadWallet(config.walletPath);
+  const connection = new Connection(config.rpcUrl, "confirmed");
+  await checkBalance(wallet, connection);
+
+  // Step 2: Show user message
   console.log(`you: "${message}"`);
 
-  // Step 2: Prompt agent (wallet & connection auto-detected!)
+  // Step 3: Prompt agent (wallet & connection auto-detected!)
   // Payment happens automatically via x402
   const result = await memeputer.prompt(config.agentId, message);
 
-  // Step 3: Show agent response
+  // Step 4: Show agent response
   console.log(`\n${config.agentId}: "${result.response}"`);
   
-  // Step 4: Show payment details
+  // Step 5: Show payment details
   showPaymentDetails(result);
 }
 

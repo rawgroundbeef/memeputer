@@ -11,6 +11,9 @@
 import memeputer from "@memeputer/sdk";
 import { loadConfig } from "./lib/config";
 import { showPaymentDetails } from "./lib/payment";
+import { loadWallet } from "./lib/wallet";
+import { checkBalance } from "./lib/balance";
+import { Connection } from "@solana/web3.js";
 
 // Load configuration
 const config = loadConfig();
@@ -19,6 +22,11 @@ const config = loadConfig();
 memeputer.enableVerbose();
 
 async function main() {
+  // Check wallet balance
+  const wallet = loadWallet(config.walletPath);
+  const connection = new Connection(config.rpcUrl, "confirmed");
+  await checkBalance(wallet, connection);
+
   // Execute ping command (same as: memeputer command memeputer ping)
   const agentId = process.argv[2] || config.agentId;
   console.log(`you: /ping`);

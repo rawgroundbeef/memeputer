@@ -160,14 +160,13 @@ export class AgentsApiClient {
         }
 
         recipient = acceptDetails.payTo;
-        // Per x402 spec: maxAmountRequired is in atomic units (micro-USDC)
-        // Parse as integer and convert to USDC (6 decimals)
-        const atomicUnits = parseInt(acceptDetails.maxAmountRequired || "10000");
-        amountUsdc = atomicUnits / 1_000_000; // Convert to USDC
-        amountMicroUsdc = atomicUnits;
+        // Per official x402 spec: maxAmountRequired is decimal USDC string (e.g., "0.01")
+        // Parse as float - already in USDC format
+        amountUsdc = parseFloat(acceptDetails.maxAmountRequired || "0.01");
+        amountMicroUsdc = Math.floor(amountUsdc * 1_000_000); // Convert to atomic units for tracking
         const feePayer = acceptDetails.extra?.feePayer;
         const scheme = acceptDetails.scheme || "exact";
-        const network = acceptDetails.network || "sol";
+        const network = acceptDetails.network || "solana-mainnet";
 
         if (!recipient) {
           throw new Error(`No recipient wallet (payTo) found in 402 response.`);
