@@ -17,6 +17,9 @@ import { showPaymentDetails } from "./lib/payment";
 // Load configuration
 const config = loadConfig();
 
+// Enable verbose logging to see x402 protocol details
+memeputer.enableVerbose();
+
 // Get message from command line argument or use config default
 const message = process.argv[2] || config.message;
 

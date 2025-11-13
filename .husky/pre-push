@@ -19,6 +19,12 @@ pnpm test:run || {
   exit 1
 }
 
+# Run tests for CLI
+cd ../../packages/cli && pnpm test:run || {
+  echo "❌ CLI tests failed. Push aborted."
+  exit 1
+}
+
 # Run tests for marketputer example
 cd ../../examples/marketputer && pnpm test:run || {
   echo "❌ Marketputer tests failed. Push aborted."

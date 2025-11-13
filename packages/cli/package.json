@@ -9,7 +9,9 @@
   "type": "module",
   "scripts": {
     "dev": "echo '✅ CLI is ready! Run: cd apps/cli && tsx src/index.ts -- agents'",
-    "test": "tsx src/index.ts agents",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui",
     "build": "tsc",
     "start": "node dist/index.js",
     "prepublishOnly": "npm run build"
@@ -36,6 +38,9 @@
   },
   "dependencies": {
     "@memeputer/sdk": "workspace:*",
+    "@solana/web3.js": "^1.98.4",
+    "axios": "^1.7.7",
+    "bs58": "^6.0.0",
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
     "dotenv": "^16.3.1",
@@ -43,8 +48,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.6",
+    "@vitest/ui": "^4.0.8",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.8"
   },
   "engines": {
     "node": ">=18.0.0"

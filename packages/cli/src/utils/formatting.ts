@@ -21,7 +21,20 @@ export function formatPrice(usdc: number): string {
 }
 
 export function formatAgent(name: string): string {
-  return chalk.magenta(name);
+  return chalk.magenta(`🤖 ${name}`);
+}
+
+export function formatPublicKey(key: string): string {
+  if (key.length <= 12) return chalk.gray(key);
+  return chalk.gray(`${key.slice(0, 4)}...${key.slice(-4)}`);
+}
+
+export function formatUsdc(amount: number): string {
+  let decimals = 2;
+  if (amount < 0.01 && amount > 0) {
+    decimals = 4;
+  }
+  return chalk.cyan(`${amount.toFixed(decimals)} USDC`);
 }
 
 export function formatUrl(url: string): string {

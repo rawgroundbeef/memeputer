@@ -1,6 +1,6 @@
 import axios from "axios";
 import { Connection, Keypair } from "@solana/web3.js";
-import { createPaymentTransaction } from "./x402Client.js";
+import { createPaymentTransaction } from "./x402Client";
 
 export interface AgentInfo {
   id: string;
@@ -50,22 +50,22 @@ export interface StatusCheckResult {
 }
 
 export class AgentsApiClient {
-  private debugLogging: boolean = false;
+  private verbose: boolean = false;
   
   constructor(private baseUrl: string) {}
   
   /**
-   * Enable debug logging for HTTP requests/responses
+   * Enable verbose logging to show x402 protocol details
    */
-  enableDebugLogging() {
-    this.debugLogging = true;
+  enableVerbose() {
+    this.verbose = true;
   }
   
   /**
-   * Disable debug logging
+   * Disable verbose logging
    */
-  disableDebugLogging() {
-    this.debugLogging = false;
+  disableVerbose() {
+    this.verbose = false;
   }
 
   /**
@@ -127,7 +127,7 @@ export class AgentsApiClient {
         );
         
         // Log response status
-        if (this.debugLogging) {
+        if (this.verbose) {
           console.log(`   📡 HTTP Response Status: ${response.status}`);
           if (response.status === 200) {
             console.log(`   ⚠️  WARNING: Got 200 response instead of 402. Backend may not be following x402 spec.`);
@@ -160,38 +160,21 @@ export class AgentsApiClient {
         }
 
         recipient = acceptDetails.payTo;
-        // QUOTE: maxAmountRequired is the estimated cost (quote)
-        // Handle both formats: micro-USDC (number > 1) or USDC (number < 1 or decimal)
-        const maxAmountRequired = acceptDetails.maxAmountRequired;
-        if (typeof maxAmountRequired === 'number') {
-          // If it's a number, check if it's already in USDC (< 1) or micro-USDC (>= 1)
-          if (maxAmountRequired < 1) {
-            // Already in USDC (e.g., 0.01)
-            amountUsdc = maxAmountRequired;
-          } else {
-            // In micro-USDC (e.g., 10000 = 0.01 USDC)
-            amountUsdc = maxAmountRequired / 1_000_000;
-          }
-        } else {
-          // String format - parse and check
-          const parsed = parseFloat(maxAmountRequired || "0.01");
-          if (parsed < 1) {
-            amountUsdc = parsed; // Already in USDC
-          } else {
-            amountUsdc = parsed / 1_000_000; // micro-USDC
-          }
-        }
-        amountMicroUsdc = Math.floor(amountUsdc * 1_000_000);
+        // Per x402 spec: maxAmountRequired is in atomic units (micro-USDC)
+        // Parse as integer and convert to USDC (6 decimals)
+        const atomicUnits = parseInt(acceptDetails.maxAmountRequired || "10000");
+        amountUsdc = atomicUnits / 1_000_000; // Convert to USDC
+        amountMicroUsdc = atomicUnits;
         const feePayer = acceptDetails.extra?.feePayer;
         const scheme = acceptDetails.scheme || "exact";
-        const network = acceptDetails.network || "solana";
+        const network = acceptDetails.network || "sol";
 
         if (!recipient) {
           throw new Error(`No recipient wallet (payTo) found in 402 response.`);
         }
 
-        // Log payment quote if debug logging is enabled
-        if (this.debugLogging) {
+        // Log payment quote if verbose logging is enabled
+        if (this.verbose) {
           console.log('   📋 Step 1: Received 402 Payment Required');
           console.log(`      💰 Cost: ${amountUsdc.toFixed(4)} USDC (${amountMicroUsdc} micro-USDC)`);
           console.log(`      🏪 Pay To: ${recipient}`);
@@ -209,17 +192,25 @@ export class AgentsApiClient {
         );
         paymentHeader = signature; // Store the payment signature
 
-        // Log payment transaction if debug logging is enabled
-        if (this.debugLogging) {
+        // Log payment transaction if verbose logging is enabled
+        if (this.verbose) {
           console.log('   💸 Step 2: Creating Payment Transaction');
           console.log(`      Amount: ${amountUsdc.toFixed(4)} USDC`);
           console.log(`      From: ${wallet.publicKey.toString()}`);
           console.log(`      To: ${recipient}`);
         }
 
-        // Step 4: Retry request with X-PAYMENT header
+        // Step 4: Retry request with X-PAYMENT header using resource URL from 402 response
+        // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
+        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/x402/interact`;
+        
+        if (this.verbose) {
+          console.log('   🔄 Step 3: Retrying request with payment');
+          console.log(`      Resource URL: ${resourceUrl}`);
+        }
+        
         response = await axios.post(
-          `${this.baseUrl}/x402/interact`,
+          resourceUrl,
           { agentId, message },
           {
             headers: {
@@ -230,11 +221,10 @@ export class AgentsApiClient {
           },
         );
 
-        // Log payment confirmation if debug logging is enabled
-        if (this.debugLogging && response.status === 200) {
-          console.log('   ✅ Step 3: Payment Confirmed');
+        // Log payment confirmation if verbose logging is enabled
+        if (this.verbose && response.status === 200) {
+          console.log('   ✅ Step 4: Payment Confirmed');
           console.log(`      Status: ${response.status} OK`);
-          console.log(`      Request retried with X-PAYMENT header`);
         }
       }
 

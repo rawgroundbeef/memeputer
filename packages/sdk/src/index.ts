@@ -1,12 +1,13 @@
 import { Connection, Keypair } from "@solana/web3.js";
-import { AgentsApiClient, InteractionResult, StatusCheckResult } from "./api.js";
-import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl } from "./utils.js";
+import { AgentsApiClient, InteractionResult, StatusCheckResult } from "./api";
+import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl } from "./utils";
 
 export interface MemeputerConfig {
   apiUrl?: string;
   rpcUrl?: string;
   wallet?: Keypair;
   connection?: Connection;
+  verbose?: boolean; // Enable verbose logging to show x402 protocol details
 }
 
 export interface PromptOptions {
@@ -36,6 +37,11 @@ export class Memeputer {
   constructor(config: MemeputerConfig = {}) {
     this.apiUrl = config.apiUrl || autoDetectApiUrl();
     this.apiClient = new AgentsApiClient(this.apiUrl);
+    
+    // Enable verbose logging if requested
+    if (config.verbose) {
+      this.apiClient.enableVerbose();
+    }
     
     // Store config - lazy initialize wallet/connection on first use
     this.wallet = config.wallet;
@@ -223,17 +229,17 @@ export class Memeputer {
   }
 
   /**
-   * Enable debug logging
+   * Enable verbose logging to show x402 protocol details
    */
-  enableDebugLogging() {
-    this.apiClient.enableDebugLogging();
+  enableVerbose() {
+    this.apiClient.enableVerbose();
   }
 
   /**
-   * Disable debug logging
+   * Disable verbose logging
    */
-  disableDebugLogging() {
-    this.apiClient.disableDebugLogging();
+  disableVerbose() {
+    this.apiClient.disableVerbose();
   }
 }
 
@@ -243,12 +249,12 @@ export type {
   StatusCheckResult,
   AgentInfo,
   X402Receipt,
-} from "./api.js";
+} from "./api";
 
 // PromptResult and CommandResult are already exported as interfaces above
 
-export { AgentsApiClient } from "./api.js";
-export { getUsdcBalance } from "./x402Client.js";
+export { AgentsApiClient } from "./api";
+export { getUsdcBalance } from "./x402Client";
 
 // Default export - auto-detects wallet and connection
 const memeputer = new Memeputer();

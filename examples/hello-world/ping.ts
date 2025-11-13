@@ -15,6 +15,9 @@ import { showPaymentDetails } from "./lib/payment.js";
 // Load configuration
 const config = loadConfig();
 
+// Enable verbose logging to see x402 protocol details
+memeputer.enableVerbose();
+
 async function main() {
   // Execute ping command (same as: memeputer command memeputer ping)
   const agentId = process.argv[2] || config.agentId;

@@ -29,6 +29,7 @@ export class Orchestrator {
       apiUrl: config.apiBase,
       wallet: config.wallet,
       connection: config.connection,
+      verbose: true, // Show x402 protocol details
     });
     this.wallet = config.wallet;
     this.connection = config.connection;

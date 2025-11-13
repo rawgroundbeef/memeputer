@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Memeputer } from './index.js';
+import { Memeputer } from '../index';
 import { Connection, Keypair } from '@solana/web3.js';
 
 // Mock the API client
-vi.mock('./api.js', () => {
+vi.mock('../api', () => {
   class MockAgentsApiClient {
     interact = vi.fn();
     checkStatus = vi.fn();
