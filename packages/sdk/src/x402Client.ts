@@ -27,12 +27,21 @@ export async function createPaymentTransaction(
   amountUsdc: number,
   scheme: string = "exact",
   network: string = "solana",
+  amountMicroUsdc?: number, // Optional: pass atomic units directly to avoid floating point precision issues
 ): Promise<{ transaction: VersionedTransaction; signature: string; txSignature?: string }> {
   try {
     const recipientPubkey = new PublicKey(recipient);
 
-    // Convert USDC amount to micro-USDC (6 decimals)
-    const amount = Math.floor(amountUsdc * 1_000_000);
+    // Use atomic units directly if provided, otherwise convert from decimal USDC
+    // Prefer atomic units to avoid floating point precision issues
+    const amount = amountMicroUsdc !== undefined 
+      ? Math.floor(amountMicroUsdc)
+      : Math.floor(amountUsdc * 1_000_000);
+    
+    // Validate: amount must be positive
+    if (amount <= 0) {
+      throw new Error(`Invalid payment amount: ${amount} atomic units (from ${amountUsdc} USDC, ${amountMicroUsdc} micro-USDC)`);
+    }
 
     // Get token accounts (allowOwnerOffCurve fixes wallet adapter key issues)
     const payerTokenAccount = await getAssociatedTokenAddress(

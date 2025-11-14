@@ -160,10 +160,47 @@ export class AgentsApiClient {
         }
 
         recipient = acceptDetails.payTo;
-        // Per official x402 spec: maxAmountRequired is decimal USDC string (e.g., "0.01")
-        // Parse as float - already in USDC format
-        amountUsdc = parseFloat(acceptDetails.maxAmountRequired || "0.01");
-        amountMicroUsdc = Math.floor(amountUsdc * 1_000_000); // Convert to atomic units for tracking
+        // Per x402 spec: maxAmountRequired should be in atomic units (micro-USDC)
+        // However, backend may send decimal format (e.g., "0.03") or atomic units (e.g., "30000")
+        // We need to detect and handle both formats
+        const maxAmountRequired = acceptDetails.maxAmountRequired;
+        let atomicUnits: number;
+        
+        if (maxAmountRequired === undefined || maxAmountRequired === null) {
+          // Default to 0.01 USDC if missing
+          atomicUnits = 10000;
+        } else if (typeof maxAmountRequired === 'number') {
+          // If number is < 1, assume it's decimal USDC (e.g., 0.03)
+          // If number is >= 1, assume it's atomic units (e.g., 30000)
+          if (maxAmountRequired < 1) {
+            atomicUnits = Math.floor(maxAmountRequired * 1_000_000);
+          } else {
+            atomicUnits = Math.floor(maxAmountRequired);
+          }
+        } else if (typeof maxAmountRequired === 'string') {
+          // Check if string contains a decimal point (decimal format)
+          if (maxAmountRequired.includes('.')) {
+            // Decimal format (e.g., "0.03") - parse as float and convert to atomic units
+            const decimalUsdc = parseFloat(maxAmountRequired);
+            if (isNaN(decimalUsdc)) {
+              atomicUnits = 10000; // Fallback
+            } else {
+              atomicUnits = Math.floor(decimalUsdc * 1_000_000);
+            }
+          } else {
+            // Integer format (e.g., "30000") - parse as atomic units directly
+            atomicUnits = parseInt(maxAmountRequired, 10);
+            if (isNaN(atomicUnits)) {
+              atomicUnits = 10000; // Fallback
+            }
+          }
+        } else {
+          // Fallback for any other type
+          atomicUnits = 10000;
+        }
+        
+        amountUsdc = atomicUnits / 1_000_000; // Convert to USDC (6 decimals) for display
+        amountMicroUsdc = atomicUnits; // Keep atomic units for payment
         const feePayer = acceptDetails.extra?.feePayer;
         const scheme = acceptDetails.scheme || "exact";
         const network = acceptDetails.network || "solana-mainnet";
@@ -181,20 +218,22 @@ export class AgentsApiClient {
         }
 
         // Step 3: Create and sign payment transaction (pay the quoted amount)
+        // Pass atomic units directly to avoid floating point precision issues
         const { signature, transaction } = await createPaymentTransaction(
           connection,
           wallet,
           recipient,
-          amountUsdc, // Pay the quoted amount
+          amountUsdc, // For display/logging
           scheme,
           network,
+          amountMicroUsdc, // Pass atomic units directly for accurate payment
         );
         paymentHeader = signature; // Store the payment signature
 
         // Log payment transaction if verbose logging is enabled
         if (this.verbose) {
           console.log('   💸 Step 2: Creating Payment Transaction');
-          console.log(`      Amount: ${amountUsdc.toFixed(4)} USDC`);
+          console.log(`      Amount: ${amountUsdc.toFixed(4)} USDC (${amountMicroUsdc} atomic units)`);
           console.log(`      From: ${wallet.publicKey.toString()}`);
           console.log(`      To: ${recipient}`);
         }
