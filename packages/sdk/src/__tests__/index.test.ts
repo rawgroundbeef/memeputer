@@ -28,7 +28,7 @@ describe('Memeputer SDK', () => {
     
     // Create SDK instance
     memeputer = new Memeputer({
-      apiUrl: 'https://agents.api.memeputer.com',
+      apiUrl: 'https://agents.memeputer.com/x402',
       rpcUrl: 'https://api.mainnet-beta.solana.com',
       wallet: mockWallet,
       connection: mockConnection,

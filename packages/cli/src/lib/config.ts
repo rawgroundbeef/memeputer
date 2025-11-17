@@ -16,8 +16,8 @@ export function loadConfig(): Config {
     network: "mainnet-beta",
     apiUrl:
       process.env.NODE_ENV === "development"
-        ? "http://localhost:3006"
-        : "https://agents.api.memeputer.com", // Default to production
+        ? "http://localhost:3006/x402"
+        : "https://agents.memeputer.com/x402", // Default to production
   };
 
   // Load from config file

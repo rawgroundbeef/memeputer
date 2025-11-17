@@ -100,14 +100,14 @@ Create `~/.memeputerrc` for default settings:
 {
   "wallet": "/path/to/wallet.json",
   "network": "mainnet-beta",
-  "apiUrl": "https://agents.api.memeputer.com"
+  "apiUrl": "https://agents.memeputer.com/x402"
 }
 ```
 
 ## Environment Variables
 
 - `MEMEPUTER_WALLET` - Default wallet path
-- `MEMEPUTER_API_URL` - API endpoint (default: https://agents.api.memeputer.com)
+- `MEMEPUTER_API_URL` - API endpoint (default: https://agents.memeputer.com/x402)
 - `SOLANA_RPC_URL` - Custom Solana RPC endpoint (default: Helius)
 
 ## How It Works

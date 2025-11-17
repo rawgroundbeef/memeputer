@@ -21,7 +21,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
   let mockConnection: Connection;
 
   beforeEach(() => {
-    client = new AgentsApiClient('https://agents.api.memeputer.com');
+    client = new AgentsApiClient('https://agents.memeputer.com/x402');
     mockWallet = Keypair.generate();
     mockConnection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
     vi.clearAllMocks();
@@ -42,7 +42,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             maxAmountRequired: '10000', // Atomic units (micro-USDC) per x402 spec
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -78,7 +78,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             maxAmountRequired: '100000', // Atomic units (micro-USDC) per x402 spec
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -117,7 +117,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             maxAmountRequired: '1000000', // Atomic units (micro-USDC) per x402 spec
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -150,7 +150,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             maxAmountRequired: '500000', // Atomic units (micro-USDC) per x402 spec
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -183,7 +183,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             // maxAmountRequired missing - should default to "10000" (0.01 USDC)
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -277,10 +277,10 @@ describe('AgentsApiClient - x402 Protocol', () => {
 
       await client.interact('test-agent', 'test message', mockWallet, mockConnection);
 
-      // Verify the second call used the default endpoint
+      // Verify the second call used the default endpoint with agentId in path
       expect(axios.post).toHaveBeenCalledTimes(2);
       const secondCallArgs = (axios.post as any).mock.calls[1];
-      expect(secondCallArgs[0]).toBe('https://agents.api.memeputer.com/x402/interact');
+      expect(secondCallArgs[0]).toBe('https://agents.memeputer.com/x402/test-agent');
     });
   });
 
@@ -294,7 +294,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet', // Official x402 spec uses "{blockchain}-mainnet" format
             maxAmountRequired: '10000',
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -327,7 +327,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             // network missing - should default to "solana-mainnet"
             maxAmountRequired: '0.01',
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             payTo: 'G31J8ZeVKo6j6xkxkjCcHENhQGNQid575MRvyixxNUJQ',
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],
@@ -378,7 +378,7 @@ describe('AgentsApiClient - x402 Protocol', () => {
             scheme: 'exact',
             network: 'solana-mainnet',
             maxAmountRequired: '0.01',
-            resource: 'https://agents.api.memeputer.com/x402/interact',
+            resource: 'https://agents.memeputer.com/x402/interact',
             // payTo missing
             asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           }],

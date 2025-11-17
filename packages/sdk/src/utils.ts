@@ -137,6 +137,6 @@ export function autoDetectApiUrl(): string {
   }
 
   // Default to production
-  return "https://agents.api.memeputer.com";
+  return "https://agents.memeputer.com/x402";
 }
 

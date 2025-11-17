@@ -17,7 +17,7 @@ export interface Config {
  */
 export function loadConfig(): Config {
   return {
-    apiUrl: process.env.MEMEPUTER_API_URL || "https://agents.api.memeputer.com",
+    apiUrl: process.env.MEMEPUTER_API_URL || "https://agents.memeputer.com/x402",
     rpcUrl: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
     walletPath: process.env.MEMEPUTER_WALLET || getDefaultWalletPath(),
     agentId: process.env.MEMEPUTER_AGENT_ID || "memeputer",

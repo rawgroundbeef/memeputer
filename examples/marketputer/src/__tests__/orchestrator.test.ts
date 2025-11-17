@@ -62,7 +62,7 @@ describe('Orchestrator', () => {
     orchestrator = new Orchestrator({
       wallet: mockWallet,
       connection: mockConnection,
-      apiBase: 'https://agents.api.memeputer.com',
+      apiBase: 'https://agents.memeputer.com/x402',
     });
 
     mockMemeputer = (orchestrator as any).memeputer;
@@ -73,7 +73,7 @@ describe('Orchestrator', () => {
       expect(orchestrator).toBeInstanceOf(Orchestrator);
       expect((orchestrator as any).wallet).toBe(mockWallet);
       expect((orchestrator as any).connection).toBe(mockConnection);
-      expect((orchestrator as any).apiBase).toBe('https://agents.api.memeputer.com');
+      expect((orchestrator as any).apiBase).toBe('https://agents.memeputer.com/x402');
     });
 
     it('should initialize tracking variables', () => {

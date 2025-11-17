@@ -72,7 +72,7 @@ export class AgentsApiClient {
    * List all available agents from the x402 resources endpoint
    */
   async listAgents(): Promise<AgentInfo[]> {
-    const response = await axios.get(`${this.baseUrl}/x402/resources`);
+    const response = await axios.get(`${this.baseUrl}/resources`);
     const data = response.data;
 
     // Parse new x402 format: { x402Version: 1, accepts: [...] }
@@ -115,8 +115,8 @@ export class AgentsApiClient {
       let response;
       try {
         response = await axios.post(
-          `${this.baseUrl}/x402/interact`,
-          { agentId, message },
+          `${this.baseUrl}/${agentId}`,
+          { message },
           {
             headers: {
               "Content-Type": "application/json",
@@ -240,7 +240,7 @@ export class AgentsApiClient {
 
         // Step 4: Retry request with X-PAYMENT header using resource URL from 402 response
         // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
-        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/x402/interact`;
+        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/${agentId}`;
         
         if (this.verbose) {
           console.log('   🔄 Step 3: Retrying request with payment');
@@ -249,7 +249,7 @@ export class AgentsApiClient {
         
         response = await axios.post(
           resourceUrl,
-          { agentId, message },
+          { message },
           {
             headers: {
               "Content-Type": "application/json",

@@ -23,7 +23,7 @@ export function createRunCommand(): Command {
     .action(async (opts) => {
       try {
         const budgetUsdc = parseFloat(opts.budget);
-        const apiBase = opts.apiBase || process.env.MEMEPUTER_API_BASE || process.env.MEMEPUTER_API_URL || 'https://agents.api.memeputer.com';
+        const apiBase = opts.apiBase || process.env.MEMEPUTER_API_BASE || process.env.MEMEPUTER_API_URL || 'https://agents.memeputer.com/x402';
         
         // Fixed task: Find relevant topics and create a meme about them
         const task = 'Find relevant topics and create a meme about them';
