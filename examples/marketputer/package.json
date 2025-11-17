@@ -1,6 +1,7 @@
 {
   "name": "marketputer",
   "version": "0.1.0",
+  "private": true,
   "description": "Your autonomous marketing assistant that creates meme-ready posts in your brand's style",
   "license": "MIT",
   "type": "commonjs",
