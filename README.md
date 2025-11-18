@@ -23,6 +23,36 @@ npm install -g pnpm
 pnpm install
 ```
 
+### Quick Wallet Setup
+
+Generate a wallet for testing:
+
+```bash
+# Generate a Solana wallet (saves to ~/.config/solana/id.json)
+pnpm run generate-solana-wallet
+
+# OR generate a Base wallet (saves to ~/.memeputer/base-wallet.json)
+pnpm run generate-base-wallet
+```
+
+Then fund your wallet with USDC to start using Memeputer agents!
+
+### Multi-Chain Support
+
+Switch between Solana and Base easily:
+
+```bash
+# Use Solana (default)
+export MEMEPUTER_CHAIN=solana
+pnpm --filter hello-world start
+
+# Use Base
+export MEMEPUTER_CHAIN=base
+pnpm --filter hello-world start
+```
+
+See the [CLI README](./packages/cli/README.md) for more details.
+
 ### Development
 
 ```bash

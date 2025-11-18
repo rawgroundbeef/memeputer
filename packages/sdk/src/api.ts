@@ -51,8 +51,11 @@ export interface StatusCheckResult {
 
 export class AgentsApiClient {
   private verbose: boolean = false;
+  private chain: string;
   
-  constructor(private baseUrl: string) {}
+  constructor(private baseUrl: string, chain: string = 'solana') {
+    this.chain = chain;
+  }
   
   /**
    * Enable verbose logging to show x402 protocol details
@@ -72,7 +75,7 @@ export class AgentsApiClient {
    * List all available agents from the x402 resources endpoint
    */
   async listAgents(): Promise<AgentInfo[]> {
-    const response = await axios.get(`${this.baseUrl}/resources`);
+    const response = await axios.get(`${this.baseUrl}/${this.chain}/resources`);
     const data = response.data;
 
     // Parse new x402 format: { x402Version: 1, accepts: [...] }
@@ -100,8 +103,8 @@ export class AgentsApiClient {
   async interact(
     agentId: string,
     message: string,
-    wallet: Keypair,
-    connection: Connection,
+    wallet: Keypair | any, // Support both Solana Keypair and EVM wallets
+    connection: Connection | any, // Support both Solana Connection and EVM providers
   ): Promise<InteractionResult> {
     try {
       // Variables to track payment quote and details
@@ -115,7 +118,7 @@ export class AgentsApiClient {
       let response;
       try {
         response = await axios.post(
-          `${this.baseUrl}/${agentId}`,
+          `${this.baseUrl}/${this.chain}/${agentId}`,
           { message },
           {
             headers: {
@@ -225,8 +228,9 @@ export class AgentsApiClient {
           recipient,
           amountUsdc, // For display/logging
           scheme,
-          network,
+          this.chain, // Use the chain from the API client
           amountMicroUsdc, // Pass atomic units directly for accurate payment
+          undefined, // RPC URL (optional, will use defaults)
         );
         paymentHeader = signature; // Store the payment signature
 
@@ -234,13 +238,15 @@ export class AgentsApiClient {
         if (this.verbose) {
           console.log('   💸 Step 2: Creating Payment Transaction');
           console.log(`      Amount: ${amountUsdc.toFixed(4)} USDC (${amountMicroUsdc} atomic units)`);
-          console.log(`      From: ${wallet.publicKey.toString()}`);
+          // Handle both Solana (publicKey) and EVM (address or privateKey) wallets
+          const from = wallet.publicKey?.toString() || wallet.address || 'EVM wallet';
+          console.log(`      From: ${from}`);
           console.log(`      To: ${recipient}`);
         }
 
         // Step 4: Retry request with X-PAYMENT header using resource URL from 402 response
         // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
-        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/${agentId}`;
+        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/${this.chain}/${agentId}`;
         
         if (this.verbose) {
           console.log('   🔄 Step 3: Retrying request with payment');
@@ -275,24 +281,27 @@ export class AgentsApiClient {
       if (data.x402Receipt) {
         // RECEIPT: Backend provided actual payment receipt
         // Use this for accurate cost tracking (actual amount paid)
+        // Get payer address (Solana or EVM wallet)
+        const payerAddress = wallet.publicKey?.toString() || wallet.address || 'unknown';
         x402Receipt = {
           amountPaidUsdc: data.x402Receipt.amountPaidUsdc || amountUsdc || 0,
           amountPaidMicroUsdc: data.x402Receipt.amountPaidMicroUsdc || amountMicroUsdc || 0,
           payTo: data.x402Receipt.payTo || recipient || '',
           transactionSignature: data.x402Receipt.transactionSignature || paymentHeader || '',
-          payer: data.x402Receipt.payer || wallet.publicKey.toString(),
+          payer: data.x402Receipt.payer || payerAddress,
           merchant: data.x402Receipt.merchant || recipient || '',
           timestamp: data.x402Receipt.timestamp || new Date().toISOString(),
         };
       } else if (paymentHeader && recipient && amountUsdc !== undefined && amountMicroUsdc !== undefined) {
         // Fallback: Construct receipt from quote (until backend adds actual receipt)
         // Note: This uses the quoted amount, not actual amount paid
+        const payerAddress = wallet.publicKey?.toString() || wallet.address || 'unknown';
         x402Receipt = {
           amountPaidUsdc: amountUsdc, // Quote amount (not actual)
           amountPaidMicroUsdc: amountMicroUsdc,
           payTo: recipient,
           transactionSignature: paymentHeader,
-          payer: wallet.publicKey.toString(),
+          payer: payerAddress,
           merchant: recipient,
           timestamp: new Date().toISOString(),
         };

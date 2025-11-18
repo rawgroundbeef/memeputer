@@ -12,23 +12,152 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
+import { ethers } from "ethers";
 
 // USDC mint on Solana mainnet
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 
+// USDC contract on Base mainnet
+const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+// ERC20 ABI (just the transfer function we need)
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function balanceOf(address owner) view returns (uint256)"
+];
+
+/**
+ * Create an EVM USDC payment transaction (for Base and other EVM chains)
+ */
+async function createEvmPaymentTransaction(
+  wallet: any, // ethers Wallet or object with privateKey
+  recipient: string,
+  amountUsdc: number,
+  scheme: string = "exact",
+  network: string = "base",
+  amountMicroUsdc?: number,
+  rpcUrl?: string,
+): Promise<{ transaction: any; signature: string }> {
+  try {
+    // Get private key from wallet
+    const privateKey = typeof wallet === 'string' 
+      ? wallet 
+      : wallet.privateKey || wallet._signingKey?.privateKey;
+    
+    if (!privateKey) {
+      throw new Error('No private key found in wallet');
+    }
+
+    // Create ethers wallet
+    const evmWallet = new ethers.Wallet(privateKey);
+    
+    // Connect to Base RPC
+    const provider = new ethers.JsonRpcProvider(
+      rpcUrl || 'https://mainnet.base.org'
+    );
+    const connectedWallet = evmWallet.connect(provider);
+
+    // Use atomic units directly if provided
+    const amount = amountMicroUsdc !== undefined 
+      ? BigInt(Math.floor(amountMicroUsdc))
+      : BigInt(Math.floor(amountUsdc * 1_000_000));
+    
+    if (amount <= 0n) {
+      throw new Error(`Invalid payment amount: ${amount} atomic units`);
+    }
+
+    // Create USDC contract instance
+    const usdcContract = new ethers.Contract(
+      BASE_USDC_ADDRESS,
+      ERC20_ABI,
+      connectedWallet
+    );
+
+    // Check USDC balance before creating transaction
+    const balance = await usdcContract.balanceOf(evmWallet.address);
+    console.log(`      🔍 Debug: USDC Balance: ${ethers.formatUnits(balance, 6)} USDC (${balance.toString()} atomic units)`);
+    console.log(`      🔍 Debug: Transfer Amount: ${ethers.formatUnits(amount, 6)} USDC (${amount.toString()} atomic units)`);
+    console.log(`      🔍 Debug: Has enough? ${balance >= amount}`);
+
+    // Create transfer transaction
+    const tx = await usdcContract.transfer.populateTransaction(
+      recipient,
+      amount
+    );
+
+    // Get gas estimate and current gas price
+    const gasLimit = await provider.estimateGas({
+      ...tx,
+      from: evmWallet.address
+    });
+    
+    const feeData = await provider.getFeeData();
+    
+    // Build complete transaction
+    const fullTx = {
+      ...tx,
+      from: evmWallet.address,
+      gasLimit: gasLimit,
+      maxFeePerGas: feeData.maxFeePerGas,
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+      chainId: 8453, // Base mainnet
+      nonce: await provider.getTransactionCount(evmWallet.address),
+    };
+
+    // Sign transaction
+    const signedTx = await connectedWallet.signTransaction(fullTx);
+
+    // Create X-PAYMENT header in x402 format
+    const paymentPayload = {
+      x402Version: 1,
+      scheme: scheme,
+      network: network,
+      payload: {
+        transaction: signedTx,
+        from: evmWallet.address,
+      },
+    };
+
+    // Encode as base64
+    const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+
+    return { transaction: signedTx, signature: paymentHeader };
+  } catch (error) {
+    throw new Error(
+      `Failed to create EVM payment: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 /**
  * Create a simple USDC payment transaction (for SDK use)
  * This creates a signed transaction that can be sent in the X-PAYMENT header
+ * Supports both Solana and EVM chains (Base, Ethereum, etc.)
  */
 export async function createPaymentTransaction(
-  connection: Connection,
-  payer: Keypair,
+  connection: Connection | any,
+  payer: Keypair | any,
   recipient: string,
   amountUsdc: number,
   scheme: string = "exact",
   network: string = "solana",
   amountMicroUsdc?: number, // Optional: pass atomic units directly to avoid floating point precision issues
-): Promise<{ transaction: VersionedTransaction; signature: string; txSignature?: string }> {
+  rpcUrl?: string, // Optional: RPC URL for EVM chains
+): Promise<{ transaction: VersionedTransaction | any; signature: string; txSignature?: string }> {
+  // Route to appropriate payment method based on network
+  if (network === 'base' || network === 'ethereum' || network === 'polygon' || network === 'arbitrum') {
+    return createEvmPaymentTransaction(
+      payer,
+      recipient,
+      amountUsdc,
+      scheme,
+      network,
+      amountMicroUsdc,
+      rpcUrl
+    );
+  }
+  
+  // Default: Solana payment
   try {
     const recipientPubkey = new PublicKey(recipient);
 

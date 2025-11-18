@@ -7,6 +7,7 @@ export interface Config {
   network?: string;
   apiUrl?: string;
   rpcUrl?: string;
+  chain?: string; // Blockchain: 'solana' (default) | 'base'
 }
 
 const CONFIG_PATH = join(homedir(), ".memeputerrc");
@@ -14,6 +15,7 @@ const CONFIG_PATH = join(homedir(), ".memeputerrc");
 export function loadConfig(): Config {
   const config: Config = {
     network: "mainnet-beta",
+    chain: "solana", // Default to Solana
     apiUrl:
       process.env.NODE_ENV === "development"
         ? "http://localhost:3006/x402"
@@ -36,6 +38,9 @@ export function loadConfig(): Config {
   }
   if (process.env.MEMEPUTER_API_URL) {
     config.apiUrl = process.env.MEMEPUTER_API_URL;
+  }
+  if (process.env.MEMEPUTER_CHAIN) {
+    config.chain = process.env.MEMEPUTER_CHAIN;
   }
   if (process.env.SOLANA_RPC_URL) {
     config.rpcUrl = process.env.SOLANA_RPC_URL;

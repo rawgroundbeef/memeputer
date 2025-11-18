@@ -10,6 +10,7 @@ export interface Config {
   walletPath: string;
   agentId: string;
   message: string;
+  chain: string; // Blockchain: 'solana' (default) | 'base'
 }
 
 /**
@@ -22,6 +23,7 @@ export function loadConfig(): Config {
     walletPath: process.env.MEMEPUTER_WALLET || getDefaultWalletPath(),
     agentId: process.env.MEMEPUTER_AGENT_ID || "memeputer",
     message: process.env.MEMEPUTER_MESSAGE || "Hello",
+    chain: process.env.MEMEPUTER_CHAIN || "solana", // Default to Solana
   };
 }
 

@@ -100,6 +100,7 @@ Create `~/.memeputerrc` for default settings:
 {
   "wallet": "/path/to/wallet.json",
   "network": "mainnet-beta",
+  "chain": "solana",
   "apiUrl": "https://agents.memeputer.com/x402"
 }
 ```
@@ -108,7 +109,31 @@ Create `~/.memeputerrc` for default settings:
 
 - `MEMEPUTER_WALLET` - Default wallet path
 - `MEMEPUTER_API_URL` - API endpoint (default: https://agents.memeputer.com/x402)
+- `MEMEPUTER_CHAIN` - Blockchain to use: `solana` (default) or `base`
 - `SOLANA_RPC_URL` - Custom Solana RPC endpoint (default: Helius)
+
+## Multi-Chain Support
+
+Switch between Solana and Base easily:
+
+```bash
+# Use Solana (default)
+export MEMEPUTER_CHAIN=solana
+memeputer ask memeputer "hello"
+
+# Use Base
+export MEMEPUTER_CHAIN=base
+memeputer ask memeputer "hello"
+```
+
+Or in your `.memeputerrc`:
+
+```json
+{
+  "chain": "base",
+  "apiUrl": "https://agents.memeputer.com/x402"
+}
+```
 
 ## How It Works
 

@@ -1,12 +1,13 @@
 import { Connection, Keypair } from "@solana/web3.js";
 import { AgentsApiClient, InteractionResult, StatusCheckResult } from "./api";
-import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl } from "./utils";
+import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl, autoDetectChain } from "./utils";
 
 export interface MemeputerConfig {
   apiUrl?: string;
   rpcUrl?: string;
-  wallet?: Keypair;
-  connection?: Connection;
+  chain?: 'solana' | 'base' | string; // Blockchain to use (default: 'solana')
+  wallet?: Keypair | any; // Solana Keypair or EVM Wallet
+  connection?: Connection | any; // Solana Connection or EVM Provider
   verbose?: boolean; // Enable verbose logging to show x402 protocol details
 }
 
@@ -29,14 +30,16 @@ export interface CommandResult extends InteractionResult {}
  */
 export class Memeputer {
   private apiClient: AgentsApiClient;
-  private wallet?: Keypair;
-  private connection?: Connection;
+  private wallet?: Keypair | any;
+  private connection?: Connection | any;
   private rpcUrl?: string;
   private apiUrl: string;
+  private chain: string;
 
   constructor(config: MemeputerConfig = {}) {
+    this.chain = config.chain || autoDetectChain(); // Auto-detect or default to Solana
     this.apiUrl = config.apiUrl || autoDetectApiUrl();
-    this.apiClient = new AgentsApiClient(this.apiUrl);
+    this.apiClient = new AgentsApiClient(this.apiUrl, this.chain);
     
     // Enable verbose logging if requested
     if (config.verbose) {

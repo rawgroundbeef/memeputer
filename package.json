@@ -12,16 +12,21 @@
     "release": "pnpm build && changeset publish",
     "clean": "pnpm -r clean",
     "link:cli": "pnpm --filter memeputer build && cd packages/cli && pnpm link --global",
-    "prepare": "husky"
+    "prepare": "husky",
+    "generate-solana-wallet": "tsx scripts/generate-solana-wallet.ts",
+    "generate-base-wallet": "tsx scripts/generate-base-wallet.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
+    "@solana/web3.js": "^1.98.4",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
+    "ethers": "^6.13.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.6",
     "prettier": "^3.3.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.0"
   },
   "engines": {

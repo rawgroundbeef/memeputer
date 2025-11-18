@@ -42,7 +42,20 @@ MEMEPUTER_WALLET=~/.config/solana/id.json
 
 ### 3. Set Up Your Wallet
 
-You need a Solana wallet with USDC. Choose one:
+You need a wallet with USDC. **Quickest way:**
+
+```bash
+# Generate a Solana wallet (saves to ~/.config/solana/id.json)
+cd ../..  # Go to project root
+pnpm run generate-solana-wallet
+
+# OR generate a Base wallet (saves to ~/.memeputer/base-wallet.json)
+pnpm run generate-base-wallet
+```
+
+Then fund your wallet with USDC!
+
+**Other options:**
 
 **Option A: Use existing Phantom wallet**
 ```bash

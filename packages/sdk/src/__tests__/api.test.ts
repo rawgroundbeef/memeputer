@@ -277,10 +277,10 @@ describe('AgentsApiClient - x402 Protocol', () => {
 
       await client.interact('test-agent', 'test message', mockWallet, mockConnection);
 
-      // Verify the second call used the default endpoint with agentId in path
+      // Verify the second call used the default endpoint with chain and agentId in path
       expect(axios.post).toHaveBeenCalledTimes(2);
       const secondCallArgs = (axios.post as any).mock.calls[1];
-      expect(secondCallArgs[0]).toBe('https://agents.memeputer.com/x402/test-agent');
+      expect(secondCallArgs[0]).toBe('https://agents.memeputer.com/x402/solana/test-agent');
     });
   });
 

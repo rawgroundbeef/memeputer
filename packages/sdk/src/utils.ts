@@ -140,3 +140,29 @@ export function autoDetectApiUrl(): string {
   return "https://agents.memeputer.com/x402";
 }
 
+/**
+ * Auto-detect blockchain chain from environment or config
+ */
+export function autoDetectChain(): string {
+  // Check environment variable
+  if (process.env.MEMEPUTER_CHAIN) {
+    return process.env.MEMEPUTER_CHAIN;
+  }
+
+  // Check config file
+  const configPath = join(homedir(), ".memeputerrc");
+  if (existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      if (config.chain) {
+        return config.chain;
+      }
+    } catch {
+      // Ignore config errors
+    }
+  }
+
+  // Default to Solana for backward compatibility
+  return "solana";
+}
+
