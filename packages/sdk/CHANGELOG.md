@@ -1,5 +1,25 @@
 # @memeputer/sdk
 
+## 1.4.0
+
+### Minor Changes
+
+- Add multi-chain support for Solana and Base (EVM) chains
+  - Add chain parameter to SDK and CLI with auto-detection from environment
+  - Update API URL structure to /x402/{chain}/{agentId}
+  - Implement EVM payment transaction creation using ethers.js
+  - Add wallet generation scripts for both Solana and Base
+  - Support MEMEPUTER_CHAIN environment variable
+  - Update all tests for multi-chain URL structure
+
+  **Breaking Changes:**
+  - API endpoint structure changed from `/x402/interact` to `/x402/{chain}/{agentId}`
+  - `interact()` method signature updated to accept `Keypair | any` for multi-chain wallet support
+
+  **Client-side ready:**
+  - ✅ Solana payments working in production
+  - ✅ Base payment creation implemented (pending backend support)
+
 ## 1.3.0
 
 ### Minor Changes
