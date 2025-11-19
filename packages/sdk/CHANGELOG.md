@@ -1,5 +1,28 @@
 # @memeputer/sdk
 
+## 1.6.0
+
+### Minor Changes
+
+- Add `discover_trends` command support
+  - Add `discover_trends` to `jsonPayloadCommands` for structured command handling
+  - Enables reliable JSON parsing for trendputer agent
+
+- Fix double `/x402` prefix in resource URL construction
+  - Handle absolute URLs with double prefix from backend
+  - Strip `/x402` prefix from relative paths when baseUrl already includes it
+  - Improve resource URL handling for x402 payment flow
+
+- Add URL construction debug logging
+  - Log base URL, chain, agent ID, and final request URL
+  - Log message preview for debugging
+  - Improve error messages with detailed URL information
+
+- Improve error handling
+  - Better error messages for 404 responses
+  - Handle empty response bodies gracefully
+  - More detailed error context for debugging
+
 ## 1.5.0
 
 ### Minor Changes

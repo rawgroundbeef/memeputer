@@ -1,5 +1,18 @@
 # memeputer
 
+## 1.5.0
+
+### Minor Changes
+
+- Updated dependencies
+  - @memeputer/sdk@1.6.0
+
+  **Improvements:**
+  - Fixed double `/x402` prefix issue in resource URLs
+  - Added URL construction debug logging
+  - Improved error handling for agent requests
+  - Support for `discover_trends` command
+
 ## 1.4.0
 
 ### Minor Changes
