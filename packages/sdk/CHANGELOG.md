@@ -1,5 +1,34 @@
 # @memeputer/sdk
 
+## 1.5.0
+
+### Minor Changes
+
+- Add Base/EVM wallet support with auto-detection
+  - Auto-detect Base wallets from `MEMEPUTER_BASE_WALLET_PRIVATE_KEY` env var, `~/.memeputerrc` config, or `~/.memeputer/base-wallet.json`
+  - Automatically switch between Solana and Base wallets based on agent payment requests
+  - Add `autoDetectBaseWallet()` utility function
+  - Export `BaseWallet` interface
+
+- Implement EIP-3009 authorization format for Base payments
+  - Switch from raw transaction format to EIP-3009 `signature` + `authorization` format
+  - Enables PayAI facilitator for gasless Base transactions
+  - Use EIP-712 typed data signing for authorizations
+  - Generate proper nonces for transfer authorizations
+
+- Add Base USDC balance checking
+  - Add `getBaseUsdcBalance()` function to check USDC balance on Base network
+  - Support both Solana and Base balance queries
+
+- Improve transaction hash handling
+  - Compute transaction hash client-side for Base payments
+  - Prefer backend-provided transaction signature when valid
+  - Fallback to computed hash for Base transactions
+
+- Fix payer address extraction
+  - Derive Base wallet address from private key when missing
+  - Prevent "unknown" payer addresses in receipts
+
 ## 1.4.0
 
 ### Minor Changes

@@ -1,5 +1,18 @@
 # memeputer
 
+## 1.4.0
+
+### Minor Changes
+
+- Updated dependencies
+  - @memeputer/sdk@1.5.0
+
+  **New Features:**
+  - Base/EVM wallet support with auto-detection
+  - EIP-3009 payment format for gasless Base transactions
+  - Base USDC balance checking
+  - Improved transaction hash and payer address handling
+
 ## 1.3.0
 
 ### Minor Changes
