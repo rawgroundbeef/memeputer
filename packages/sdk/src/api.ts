@@ -1,6 +1,7 @@
 import axios from "axios";
 import { Connection, Keypair } from "@solana/web3.js";
 import { createPaymentTransaction } from "./x402Client";
+import { autoDetectBaseWallet, BaseWallet } from "./utils";
 
 export interface AgentInfo {
   id: string;
@@ -113,6 +114,9 @@ export class AgentsApiClient {
       let paymentHeader: string | undefined;
       let recipient: string | undefined;
       let acceptDetails: any | undefined;
+      let paymentWallet: any = wallet; // Will be set based on network from 402 response
+      let computedTxHash: string | undefined; // Computed transaction hash for Base transactions
+      let normalizedNetwork: string = 'solana'; // Network from 402 response
       
       // Step 1: Make request without payment (will get 402)
       let response;
@@ -206,7 +210,14 @@ export class AgentsApiClient {
         amountMicroUsdc = atomicUnits; // Keep atomic units for payment
         const feePayer = acceptDetails.extra?.feePayer;
         const scheme = acceptDetails.scheme || "exact";
+        // IMPORTANT: Use network from 402 response, not this.chain
+        // The agent requests a specific network (e.g., "base"), not the client's default chain
         const network = acceptDetails.network || "solana-mainnet";
+        
+        // Normalize network name (handle variations like "base", "base-mainnet", "solana", "solana-mainnet")
+        normalizedNetwork = network.toLowerCase().includes('base') || network.toLowerCase().includes('ethereum') || network.toLowerCase().includes('polygon') || network.toLowerCase().includes('arbitrum')
+          ? (network.toLowerCase().includes('base') ? 'base' : network.split('-')[0])
+          : 'solana';
 
         if (!recipient) {
           throw new Error(`No recipient wallet (payTo) found in 402 response.`);
@@ -217,34 +228,107 @@ export class AgentsApiClient {
           console.log('   📋 Step 1: Received 402 Payment Required');
           console.log(`      💰 Cost: ${amountUsdc.toFixed(4)} USDC (${amountMicroUsdc} micro-USDC)`);
           console.log(`      🏪 Pay To: ${recipient}`);
-          console.log(`      📝 Scheme: ${scheme}, Network: ${network}`);
+          console.log(`      📝 Scheme: ${scheme}, Network: ${network} (normalized: ${normalizedNetwork})`);
         }
 
-        // Step 3: Create and sign payment transaction (pay the quoted amount)
+        // Step 3: Determine which wallet to use based on network from 402 response
+        let paymentConnection = connection;
+        
+        // If network is Base/EVM, ensure we have a Base wallet
+        if (normalizedNetwork === 'base' || normalizedNetwork === 'ethereum' || normalizedNetwork === 'polygon' || normalizedNetwork === 'arbitrum') {
+          // Check if wallet is already a Base wallet
+          // Solana Keypair has: publicKey (PublicKey object), secretKey (Uint8Array)
+          // Base wallet can have: 
+          //   - privateKey (string starting with 0x) - required
+          //   - address (string starting with 0x) - optional (can be derived from privateKey)
+          const isSolanaWallet = wallet?.publicKey && typeof wallet.publicKey.toString === 'function';
+          const hasBasePrivateKey = wallet?.privateKey && 
+                                    typeof wallet.privateKey === 'string' && 
+                                    (wallet.privateKey.startsWith('0x') || wallet.privateKey.length === 64);
+          const isBaseWallet = hasBasePrivateKey; // If it has privateKey, it's a Base wallet (address optional)
+          
+          if (this.verbose) {
+            console.log(`   🔍 Wallet detection: isSolanaWallet=${isSolanaWallet}, isBaseWallet=${isBaseWallet}, hasPrivateKey=${!!wallet?.privateKey}`);
+          }
+          
+          if (isSolanaWallet && !isBaseWallet) {
+            // Wallet is Solana Keypair, need to load Base wallet
+            try {
+              paymentWallet = autoDetectBaseWallet();
+              if (this.verbose) {
+                console.log(`   🔄 Switched to Base wallet: ${paymentWallet.address}`);
+              }
+            } catch (error: any) {
+              throw new Error(
+                `Agent requires ${normalizedNetwork} payment but no Base wallet found. ` +
+                `Set MEMEPUTER_BASE_WALLET_PRIVATE_KEY environment variable or create ~/.memeputer/base-wallet.json. ` +
+                `Error: ${error.message}`
+              );
+            }
+          } else if (!isBaseWallet && !isSolanaWallet) {
+            // Wallet format is unclear, try to load Base wallet
+            try {
+              paymentWallet = autoDetectBaseWallet();
+              if (this.verbose) {
+                console.log(`   🔄 Loaded Base wallet: ${paymentWallet.address}`);
+              }
+            } catch (error: any) {
+              throw new Error(
+                `Agent requires ${normalizedNetwork} payment but wallet format is unclear and no Base wallet found. ` +
+                `Set MEMEPUTER_BASE_WALLET_PRIVATE_KEY environment variable or create ~/.memeputer/base-wallet.json. ` +
+                `Error: ${error.message}`
+              );
+            }
+          }
+          // If wallet already has privateKey in Base format, use it as-is (address optional)
+          // But ensure paymentWallet is set (it's already initialized to wallet, so this is fine)
+          
+          // Final check: ensure paymentWallet has privateKey for Base payments
+          if (!paymentWallet?.privateKey || (typeof paymentWallet.privateKey !== 'string')) {
+            // This shouldn't happen, but add defensive check
+            try {
+              paymentWallet = autoDetectBaseWallet();
+              if (this.verbose) {
+                console.log(`   🔄 Fallback: Loaded Base wallet: ${paymentWallet.address}`);
+              }
+            } catch (error: any) {
+              throw new Error(
+                `Agent requires ${normalizedNetwork} payment but wallet does not have a valid privateKey. ` +
+                `Set MEMEPUTER_BASE_WALLET_PRIVATE_KEY environment variable or create ~/.memeputer/base-wallet.json. ` +
+                `Error: ${error.message}`
+              );
+            }
+          }
+        }
+
+        // Step 4: Create and sign payment transaction (pay the quoted amount)
         // Pass atomic units directly to avoid floating point precision issues
-        const { signature, transaction } = await createPaymentTransaction(
-          connection,
-          wallet,
+        // Use normalizedNetwork from 402 response, not this.chain
+        const { signature, transaction, txHash } = await createPaymentTransaction(
+          paymentConnection,
+          paymentWallet,
           recipient,
           amountUsdc, // For display/logging
           scheme,
-          this.chain, // Use the chain from the API client
+          normalizedNetwork, // Use network from 402 response, not this.chain
           amountMicroUsdc, // Pass atomic units directly for accurate payment
           undefined, // RPC URL (optional, will use defaults)
         );
         paymentHeader = signature; // Store the payment signature
+        // Store computed transaction hash for Base transactions (backend should return actual hash)
+        const computedTxHash = txHash;
 
         // Log payment transaction if verbose logging is enabled
         if (this.verbose) {
           console.log('   💸 Step 2: Creating Payment Transaction');
           console.log(`      Amount: ${amountUsdc.toFixed(4)} USDC (${amountMicroUsdc} atomic units)`);
           // Handle both Solana (publicKey) and EVM (address or privateKey) wallets
-          const from = wallet.publicKey?.toString() || wallet.address || 'EVM wallet';
+          const from = paymentWallet.publicKey?.toString() || paymentWallet.address || 'EVM wallet';
           console.log(`      From: ${from}`);
           console.log(`      To: ${recipient}`);
         }
 
-        // Step 4: Retry request with X-PAYMENT header using resource URL from 402 response
+        // Step 5: Retry request with X-PAYMENT header using resource URL from 402 response
         // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
         const resourceUrl = acceptDetails.resource || `${this.baseUrl}/${this.chain}/${agentId}`;
         
@@ -267,7 +351,7 @@ export class AgentsApiClient {
 
         // Log payment confirmation if verbose logging is enabled
         if (this.verbose && response.status === 200) {
-          console.log('   ✅ Step 4: Payment Confirmed');
+          console.log('   ✅ Step 3: Payment Confirmed');
           console.log(`      Status: ${response.status} OK`);
         }
       }
@@ -275,19 +359,49 @@ export class AgentsApiClient {
       // Parse successful response (after payment)
       const data = response.data;
 
-      // Step 5: Parse RECEIPT from success response (after payment)
+      // Step 6: Parse RECEIPT from success response (after payment)
       // This is the actual amount paid - use for cost tracking
       let x402Receipt: X402Receipt | undefined;
       if (data.x402Receipt) {
         // RECEIPT: Backend provided actual payment receipt
         // Use this for accurate cost tracking (actual amount paid)
-        // Get payer address (Solana or EVM wallet)
-        const payerAddress = wallet.publicKey?.toString() || wallet.address || 'unknown';
+        // Get payer address (Solana or EVM wallet) - use paymentWallet if it was switched
+        const payerWallet = paymentWallet || wallet;
+        let payerAddress = payerWallet.publicKey?.toString() || payerWallet.address;
+        
+        // If Base wallet doesn't have address, derive it from private key
+        if (!payerAddress && payerWallet.privateKey && typeof payerWallet.privateKey === 'string') {
+          try {
+            const { ethers } = await import('ethers');
+            const tempWallet = new ethers.Wallet(payerWallet.privateKey);
+            payerAddress = tempWallet.address;
+          } catch {
+            payerAddress = 'unknown';
+          }
+        }
+        
+        payerAddress = payerAddress || 'unknown';
+        // For Base transactions, prefer the actual transaction hash from backend
+        // If backend doesn't provide a valid hash (returns payment header instead), use computed hash
+        let txSignature = data.x402Receipt.transactionSignature;
+        
+        // Check if backend returned a valid Base transaction hash (0x + 64 hex chars = 66 chars)
+        const isValidBaseHash = txSignature && 
+                                txSignature.startsWith('0x') && 
+                                txSignature.length === 66 &&
+                                /^0x[a-fA-F0-9]{64}$/.test(txSignature);
+        
+        // If backend didn't return a valid hash, use computed hash for Base transactions
+        if (normalizedNetwork === 'base' && computedTxHash && !isValidBaseHash) {
+          // Backend returned payment header or invalid hash, use computed hash instead
+          txSignature = computedTxHash;
+        }
+        
         x402Receipt = {
           amountPaidUsdc: data.x402Receipt.amountPaidUsdc || amountUsdc || 0,
           amountPaidMicroUsdc: data.x402Receipt.amountPaidMicroUsdc || amountMicroUsdc || 0,
           payTo: data.x402Receipt.payTo || recipient || '',
-          transactionSignature: data.x402Receipt.transactionSignature || paymentHeader || '',
+          transactionSignature: txSignature || paymentHeader || '',
           payer: data.x402Receipt.payer || payerAddress,
           merchant: data.x402Receipt.merchant || recipient || '',
           timestamp: data.x402Receipt.timestamp || new Date().toISOString(),
@@ -295,12 +409,32 @@ export class AgentsApiClient {
       } else if (paymentHeader && recipient && amountUsdc !== undefined && amountMicroUsdc !== undefined) {
         // Fallback: Construct receipt from quote (until backend adds actual receipt)
         // Note: This uses the quoted amount, not actual amount paid
-        const payerAddress = wallet.publicKey?.toString() || wallet.address || 'unknown';
+        const payerWallet = paymentWallet || wallet;
+        let payerAddress = payerWallet.publicKey?.toString() || payerWallet.address;
+        
+        // If Base wallet doesn't have address, derive it from private key
+        if (!payerAddress && payerWallet.privateKey && typeof payerWallet.privateKey === 'string') {
+          try {
+            const { ethers } = await import('ethers');
+            const tempWallet = new ethers.Wallet(payerWallet.privateKey);
+            payerAddress = tempWallet.address;
+          } catch {
+            payerAddress = 'unknown';
+          }
+        }
+        
+        payerAddress = payerAddress || 'unknown';
+        
+        // For Base transactions, use computed hash if available
+        const txSignature = (normalizedNetwork === 'base' && computedTxHash) 
+          ? computedTxHash 
+          : paymentHeader;
+        
         x402Receipt = {
           amountPaidUsdc: amountUsdc, // Quote amount (not actual)
           amountPaidMicroUsdc: amountMicroUsdc,
           payTo: recipient,
-          transactionSignature: paymentHeader,
+          transactionSignature: txSignature,
           payer: payerAddress,
           merchant: recipient,
           timestamp: new Date().toISOString(),

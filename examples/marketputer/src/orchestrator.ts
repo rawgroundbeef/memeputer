@@ -2,7 +2,7 @@ import { Connection, Keypair } from '@solana/web3.js';
 import { Memeputer, PromptResult, getUsdcBalance } from '@memeputer/sdk';
 import { OrchestratorConfig, TaskRequest, TaskResult } from './types';
 import { CleanLogger } from './lib/logger';
-import { getSolscanTxUrl, getSolscanAccountUrl, detectNetwork } from './lib/utils';
+import { getTxUrl, getAccountUrl, detectNetwork } from './lib/utils';
 
 /**
  * Orchestrator - Coordinates and pays multiple specialized agents to complete tasks
@@ -819,11 +819,11 @@ export class Orchestrator {
           agentId,
           amount: paymentAmount,
           transactionSignature: result.transactionSignature,
-          txUrl: getSolscanTxUrl(result.transactionSignature, this.network),
+          txUrl: getTxUrl(result.transactionSignature, this.network),
           fromWallet: payer,
-          fromWalletUrl: getSolscanAccountUrl(payer, this.network),
+          fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
-          toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
+          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
           receiptAmount: result.x402Receipt?.amountPaidUsdc,
         });
       }
@@ -897,11 +897,11 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
           agentId: 'briefputer',
           amount: paymentAmount,
           transactionSignature: evaluationResult.transactionSignature,
-          txUrl: getSolscanTxUrl(evaluationResult.transactionSignature, this.network),
+          txUrl: getTxUrl(evaluationResult.transactionSignature, this.network),
           fromWallet: payer,
-          fromWalletUrl: getSolscanAccountUrl(payer, this.network),
+          fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
-          toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
+          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
           receiptAmount: evaluationResult.x402Receipt?.amountPaidUsdc,
         });
       }

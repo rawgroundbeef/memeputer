@@ -1,6 +1,6 @@
 import { Connection, Keypair } from "@solana/web3.js";
 import { AgentsApiClient, InteractionResult, StatusCheckResult } from "./api";
-import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl, autoDetectChain } from "./utils";
+import { autoDetectWallet, autoDetectRpcUrl, autoDetectApiUrl, autoDetectChain, autoDetectBaseWallet, BaseWallet } from "./utils";
 
 export interface MemeputerConfig {
   apiUrl?: string;
@@ -257,7 +257,8 @@ export type {
 // PromptResult and CommandResult are already exported as interfaces above
 
 export { AgentsApiClient } from "./api";
-export { getUsdcBalance } from "./x402Client";
+export { getUsdcBalance, getBaseUsdcBalance } from "./x402Client";
+export { autoDetectBaseWallet, BaseWallet } from "./utils";
 
 // Default export - auto-detects wallet and connection
 const memeputer = new Memeputer();

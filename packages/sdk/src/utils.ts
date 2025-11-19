@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import bs58 from "bs58";
+import { Wallet } from "ethers";
 
 /**
  * Auto-detect wallet from common locations
@@ -164,5 +165,73 @@ export function autoDetectChain(): string {
 
   // Default to Solana for backward compatibility
   return "solana";
+}
+
+/**
+ * Base/EVM wallet interface
+ */
+export interface BaseWallet {
+  address: string;
+  privateKey: string;
+}
+
+/**
+ * Auto-detect Base/EVM wallet from common locations
+ */
+export function autoDetectBaseWallet(): BaseWallet {
+  // Check environment variable for private key
+  const envPrivateKey = process.env.MEMEPUTER_BASE_WALLET_PRIVATE_KEY || 
+                        process.env.BASE_WALLET_PRIVATE_KEY ||
+                        process.env.EVM_WALLET_PRIVATE_KEY;
+
+  if (envPrivateKey) {
+    try {
+      const wallet = new Wallet(envPrivateKey);
+      return {
+        address: wallet.address,
+        privateKey: wallet.privateKey,
+      };
+    } catch (error: any) {
+      throw new Error(`Invalid Base wallet private key: ${error.message}`);
+    }
+  }
+
+  // Check config file
+  const configPath = join(homedir(), ".memeputerrc");
+  if (existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      if (config.baseWallet?.privateKey) {
+        const wallet = new Wallet(config.baseWallet.privateKey);
+        return {
+          address: wallet.address,
+          privateKey: wallet.privateKey,
+        };
+      }
+    } catch {
+      // Ignore config errors
+    }
+  }
+
+  // Default Base wallet location
+  const defaultBaseWalletPath = join(homedir(), ".memeputer", "base-wallet.json");
+  if (existsSync(defaultBaseWalletPath)) {
+    try {
+      const walletData = JSON.parse(readFileSync(defaultBaseWalletPath, "utf-8"));
+      if (walletData.privateKey) {
+        const wallet = new Wallet(walletData.privateKey);
+        return {
+          address: wallet.address,
+          privateKey: wallet.privateKey,
+        };
+      }
+    } catch (error: any) {
+      throw new Error(`Failed to load Base wallet from ${defaultBaseWalletPath}: ${error.message}`);
+    }
+  }
+
+  throw new Error(
+    "No Base wallet found. Set MEMEPUTER_BASE_WALLET_PRIVATE_KEY environment variable or create ~/.memeputer/base-wallet.json"
+  );
 }
 

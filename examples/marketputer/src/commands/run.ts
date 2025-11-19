@@ -4,7 +4,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { getUsdcBalance } from '@memeputer/sdk';
+import { getUsdcBalance, getBaseUsdcBalance, autoDetectBaseWallet } from '@memeputer/sdk';
 import { Orchestrator } from '../orchestrator';
 import { BrandProfile, BrandProfileSchema } from '../types';
 
@@ -132,30 +132,78 @@ export function createRunCommand(): Command {
             console.log('🎨 Brand:', brandProfile.brandName || 'Custom');
           }
         }
-        console.log('🔑 Wallet:', wallet.publicKey.toString());
+        // Show wallet addresses - check if Base wallet is available
+        let baseWalletAddress: string | undefined;
+        try {
+          const baseWallet = autoDetectBaseWallet();
+          baseWalletAddress = baseWallet.address;
+        } catch {
+          // Base wallet not configured
+        }
+        
+        if (baseWalletAddress) {
+          console.log('🔑 Solana Wallet:', wallet.publicKey.toString());
+          console.log('🔑 Base Wallet:', baseWalletAddress);
+        } else {
+          console.log('🔑 Wallet:', wallet.publicKey.toString());
+        }
         console.log('🌐 API:', apiBase);
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         const connection = new Connection(rpcUrl, 'confirmed');
         
-        // Check wallet balance before proceeding
-        console.log('💰 Checking wallet balance...');
-        const balance = await getUsdcBalance(connection, wallet);
-        console.log(`   Current USDC balance: ${balance.toFixed(4)} USDC`);
+        // Check wallet balances before proceeding
+        // Since agents may request Base payments, check both Solana and Base balances
+        console.log('💰 Checking wallet balances...');
+        
+        // Check Solana balance
+        const solanaBalance = await getUsdcBalance(connection, wallet);
+        console.log(`   Solana USDC balance: ${solanaBalance.toFixed(4)} USDC (${wallet.publicKey.toString()})`);
+        
+        // Try to check Base balance (may not be configured)
+        let baseBalance = 0;
+        if (baseWalletAddress) {
+          // Base wallet was already loaded above, use it for balance check
+          try {
+            const baseWallet = autoDetectBaseWallet();
+            baseBalance = await getBaseUsdcBalance(baseWallet);
+            console.log(`   Base USDC balance: ${baseBalance.toFixed(4)} USDC (${baseWalletAddress})`);
+          } catch (error) {
+            console.log(`   Base wallet: Error checking balance`);
+          }
+        } else {
+          console.log(`   Base wallet: Not configured (agents requesting Base payments will auto-load if available)`);
+        }
+        
         console.log(`   Budget requested: ${budgetUsdc.toFixed(4)} USDC`);
         
-        if (balance < budgetUsdc) {
-          console.log('\n❌ ERROR: Your wallet balance is less than the requested budget!');
-          console.log(`   Wallet: ${wallet.publicKey.toString()}`);
-          console.log(`   Balance: ${balance.toFixed(4)} USDC`);
+        // Check if we have sufficient balance on either network
+        // Since agents may request Base payments, we need Base balance
+        // But we'll check Solana balance for backward compatibility
+        const hasSolanaBalance = solanaBalance >= budgetUsdc;
+        const hasBaseBalance = baseBalance >= budgetUsdc;
+        
+        if (!hasSolanaBalance && !hasBaseBalance) {
+          console.log('\n❌ ERROR: Insufficient USDC balance on both networks!');
+          console.log(`   Solana Wallet: ${wallet.publicKey.toString()}`);
+          console.log(`   Solana Balance: ${solanaBalance.toFixed(4)} USDC`);
+          if (baseWalletAddress) {
+            console.log(`   Base Wallet: ${baseWalletAddress}`);
+            console.log(`   Base Balance: ${baseBalance.toFixed(4)} USDC`);
+          }
           console.log(`   Budget: ${budgetUsdc.toFixed(4)} USDC`);
-          console.log(`   Shortfall: ${(budgetUsdc - balance).toFixed(4)} USDC`);
-          console.log('\n   Please add more USDC to your wallet before proceeding.');
+          console.log('\n   Please add more USDC to your wallet(s) before proceeding.');
           console.log('   Execution stopped to prevent partial failures.\n');
           process.exit(1);
         } else {
+          const network = hasBaseBalance ? 'Base' : 'Solana';
+          const balance = hasBaseBalance ? baseBalance : solanaBalance;
           const remaining = balance - budgetUsdc;
-          console.log(`   ✅ Sufficient balance (${remaining.toFixed(4)} USDC remaining after budget)\n`);
+          console.log(`   ✅ Sufficient balance on ${network} (${remaining.toFixed(4)} USDC remaining after budget)`);
+          if (hasBaseBalance && baseWalletAddress !== 'N/A') {
+            console.log(`   ℹ️  Note: Agents requesting Base payments will use Base wallet: ${baseWalletAddress}`);
+          }
+          console.log('');
         }
         
         // Create orchestrator
@@ -180,7 +228,7 @@ export function createRunCommand(): Command {
         console.log('   8. Write Captions - Captionputer generates multiple caption options');
         console.log('   9. Broadcast to Telegram - Broadcastputer posts final content');
         console.log('\n💸 Each step involves paying agents via x402 micropayments');
-        console.log('   All payments tracked with Solscan links\n');
+        console.log('   All payments tracked with blockchain explorer links (Basescan for Base, Solscan for Solana)\n');
 
         const loopEnabled = opts.loop || false;
         const loopDelaySeconds = parseInt(opts.loopDelay || '60', 10);

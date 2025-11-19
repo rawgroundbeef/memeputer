@@ -13,6 +13,8 @@ import {
 } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
 import { ethers } from "ethers";
+import { randomBytes } from "crypto";
+import { BaseWallet } from "./utils";
 
 // USDC mint on Solana mainnet
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
@@ -27,25 +29,38 @@ const ERC20_ABI = [
 ];
 
 /**
- * Create an EVM USDC payment transaction (for Base and other EVM chains)
+ * Create an EIP-3009 authorization for Base USDC payments
+ * This format enables PayAI facilitator to pay gas fees on behalf of users
  */
-async function createEvmPaymentTransaction(
-  wallet: any, // ethers Wallet or object with privateKey
+async function createEip3009Authorization(
+  wallet: any, // ethers Wallet, BaseWallet, or object with privateKey
   recipient: string,
   amountUsdc: number,
   scheme: string = "exact",
   network: string = "base",
   amountMicroUsdc?: number,
   rpcUrl?: string,
-): Promise<{ transaction: any; signature: string }> {
+): Promise<{ transaction: any; signature: string; txHash?: string }> {
   try {
-    // Get private key from wallet
-    const privateKey = typeof wallet === 'string' 
-      ? wallet 
-      : wallet.privateKey || wallet._signingKey?.privateKey;
+    // Get private key from wallet - handle multiple formats
+    let privateKey: string;
     
-    if (!privateKey) {
-      throw new Error('No private key found in wallet');
+    if (typeof wallet === 'string') {
+      // Direct private key string
+      privateKey = wallet;
+    } else if (wallet?.privateKey) {
+      // BaseWallet interface or ethers Wallet
+      privateKey = wallet.privateKey;
+    } else if (wallet?._signingKey?.privateKey) {
+      // ethers Wallet internal format
+      privateKey = wallet._signingKey.privateKey;
+    } else {
+      throw new Error('No private key found in wallet. Expected Base/EVM wallet with privateKey property.');
+    }
+    
+    // Ensure private key starts with 0x
+    if (!privateKey.startsWith('0x')) {
+      privateKey = '0x' + privateKey;
     }
 
     // Create ethers wallet
@@ -66,67 +81,116 @@ async function createEvmPaymentTransaction(
       throw new Error(`Invalid payment amount: ${amount} atomic units`);
     }
 
-    // Create USDC contract instance
+    // Create USDC contract instance for balance check
     const usdcContract = new ethers.Contract(
       BASE_USDC_ADDRESS,
       ERC20_ABI,
       connectedWallet
     );
 
-    // Check USDC balance before creating transaction
+    // Check USDC balance before creating authorization
     const balance = await usdcContract.balanceOf(evmWallet.address);
     console.log(`      🔍 Debug: USDC Balance: ${ethers.formatUnits(balance, 6)} USDC (${balance.toString()} atomic units)`);
     console.log(`      🔍 Debug: Transfer Amount: ${ethers.formatUnits(amount, 6)} USDC (${amount.toString()} atomic units)`);
     console.log(`      🔍 Debug: Has enough? ${balance >= amount}`);
 
-    // Create transfer transaction
-    const tx = await usdcContract.transfer.populateTransaction(
-      recipient,
-      amount
-    );
+    // Determine chain ID based on network
+    const chainId = network === 'base' ? 8453 : // Base mainnet
+                    network.includes('sepolia') ? 84532 : // Base Sepolia testnet
+                    8453; // Default to Base mainnet
 
-    // Get gas estimate and current gas price
-    const gasLimit = await provider.estimateGas({
-      ...tx,
-      from: evmWallet.address
-    });
-    
-    const feeData = await provider.getFeeData();
-    
-    // Build complete transaction
-    const fullTx = {
-      ...tx,
+    // Create EIP-3009 authorization object
+    const now = Math.floor(Date.now() / 1000);
+    const authorization = {
       from: evmWallet.address,
-      gasLimit: gasLimit,
-      maxFeePerGas: feeData.maxFeePerGas,
-      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
-      chainId: 8453, // Base mainnet
-      nonce: await provider.getTransactionCount(evmWallet.address),
+      to: recipient,
+      value: amount.toString(), // String format for EIP-712
+      validAfter: now.toString(),
+      validBefore: (now + 300).toString(), // 5 minute window for PayAI to execute
+      nonce: "0x" + randomBytes(32).toString("hex") // Random 32-byte nonce
     };
 
-    // Sign transaction
-    const signedTx = await connectedWallet.signTransaction(fullTx);
+    // EIP-712 domain for USDC on Base
+    // USDC contract name is "USD Coin" and version is "2" per EIP-3009 spec
+    const domain = {
+      name: "USD Coin",
+      version: "2",
+      chainId: chainId,
+      verifyingContract: BASE_USDC_ADDRESS // USDC contract address
+    };
 
-    // Create X-PAYMENT header in x402 format
+    // EIP-712 types for TransferWithAuthorization
+    const types = {
+      TransferWithAuthorization: [
+        { name: "from", type: "address" },
+        { name: "to", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "validAfter", type: "uint256" },
+        { name: "validBefore", type: "uint256" },
+        { name: "nonce", type: "bytes32" }
+      ]
+    };
+
+    // Sign with EIP-712
+    const eip712Signature = await connectedWallet.signTypedData(domain, types, authorization);
+
+    // Create X-PAYMENT header in x402 format (EIP-3009)
     const paymentPayload = {
       x402Version: 1,
       scheme: scheme,
       network: network,
       payload: {
-        transaction: signedTx,
-        from: evmWallet.address,
+        signature: eip712Signature,
+        authorization: authorization
       },
     };
 
     // Encode as base64
     const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
-    return { transaction: signedTx, signature: paymentHeader };
+    // Note: For EIP-3009, we don't have a transaction hash yet
+    // The facilitator will execute the transferWithAuthorization and return the hash
+    return { 
+      transaction: null, // Not used for EIP-3009
+      signature: paymentHeader,
+      txHash: undefined // Will be returned by backend after facilitator executes
+    };
   } catch (error) {
     throw new Error(
-      `Failed to create EVM payment: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to create EIP-3009 authorization: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+}
+
+/**
+ * Create an EVM USDC payment transaction (for Base and other EVM chains)
+ * Uses EIP-3009 format for Base to enable PayAI facilitator
+ */
+async function createEvmPaymentTransaction(
+  wallet: any, // ethers Wallet, BaseWallet, or object with privateKey
+  recipient: string,
+  amountUsdc: number,
+  scheme: string = "exact",
+  network: string = "base",
+  amountMicroUsdc?: number,
+  rpcUrl?: string,
+): Promise<{ transaction: any; signature: string; txHash?: string }> {
+  // Use EIP-3009 format for Base network
+  if (network === 'base' || network.startsWith('base-')) {
+    return createEip3009Authorization(
+      wallet,
+      recipient,
+      amountUsdc,
+      scheme,
+      network,
+      amountMicroUsdc,
+      rpcUrl
+    );
+  }
+  
+  // For other EVM chains, fall back to raw transaction format
+  // (This can be updated to EIP-3009 later if needed)
+  throw new Error(`EIP-3009 format not yet implemented for network: ${network}. Base network is supported.`);
 }
 
 /**
@@ -143,7 +207,7 @@ export async function createPaymentTransaction(
   network: string = "solana",
   amountMicroUsdc?: number, // Optional: pass atomic units directly to avoid floating point precision issues
   rpcUrl?: string, // Optional: RPC URL for EVM chains
-): Promise<{ transaction: VersionedTransaction | any; signature: string; txSignature?: string }> {
+): Promise<{ transaction: VersionedTransaction | any; signature: string; txSignature?: string; txHash?: string }> {
   // Route to appropriate payment method based on network
   if (network === 'base' || network === 'ethereum' || network === 'polygon' || network === 'arbitrum') {
     return createEvmPaymentTransaction(
@@ -284,7 +348,7 @@ export async function createPaymentTransaction(
 }
 
 /**
- * Get USDC balance for a wallet
+ * Get USDC balance for a Solana wallet
  */
 export async function getUsdcBalance(
   connection: Connection,
@@ -302,6 +366,48 @@ export async function getUsdcBalance(
     return parseFloat(balance.value.uiAmount?.toString() || "0");
   } catch (error) {
     // Token account doesn't exist or other error
+    return 0;
+  }
+}
+
+/**
+ * Get USDC balance for a Base/EVM wallet
+ */
+export async function getBaseUsdcBalance(
+  wallet: BaseWallet | { address: string; privateKey: string } | string,
+  rpcUrl?: string,
+): Promise<number> {
+  try {
+    let address: string;
+    
+    if (typeof wallet === 'string') {
+      // Assume it's an address
+      address = wallet;
+    } else if (wallet?.address) {
+      address = wallet.address;
+    } else {
+      // Derive address from private key
+      const privateKey = wallet.privateKey.startsWith('0x') 
+        ? wallet.privateKey 
+        : '0x' + wallet.privateKey;
+      const evmWallet = new ethers.Wallet(privateKey);
+      address = evmWallet.address;
+    }
+    
+    const provider = new ethers.JsonRpcProvider(
+      rpcUrl || 'https://mainnet.base.org'
+    );
+    
+    const usdcContract = new ethers.Contract(
+      BASE_USDC_ADDRESS,
+      ERC20_ABI,
+      provider
+    );
+    
+    const balance = await usdcContract.balanceOf(address);
+    return parseFloat(ethers.formatUnits(balance, 6));
+  } catch (error) {
+    // Return 0 on error
     return 0;
   }
 }
