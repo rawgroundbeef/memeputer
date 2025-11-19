@@ -119,10 +119,23 @@ export class AgentsApiClient {
       let normalizedNetwork: string = 'solana'; // Network from 402 response
       
       // Step 1: Make request without payment (will get 402)
+      // Construct URL: baseUrl should be like "http://localhost:3007/x402" or "https://agents.memeputer.com/x402"
+      // Final URL should be: baseUrl/chain/agentId
+      // Example: http://localhost:3007/x402/solana/trendputer
+      const requestUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
+      
+      // Always log URL construction for debugging
+      console.log(`\n   🔍 URL Construction Debug:`);
+      console.log(`   📋 Base URL: ${this.baseUrl}`);
+      console.log(`   🔗 Chain: ${this.chain}`);
+      console.log(`   👤 Agent ID: ${agentId}`);
+      console.log(`   🔗 Final Request URL: ${requestUrl}`);
+      console.log(`   📝 Message preview: ${message.substring(0, 150)}${message.length > 150 ? '...' : ''}\n`);
+      
       let response;
       try {
         response = await axios.post(
-          `${this.baseUrl}/${this.chain}/${agentId}`,
+          requestUrl,
           { message },
           {
             headers: {
@@ -136,10 +149,19 @@ export class AgentsApiClient {
         // Log response status
         if (this.verbose) {
           console.log(`   📡 HTTP Response Status: ${response.status}`);
+          console.log(`   📝 Message: ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`);
           if (response.status === 200) {
             console.log(`   ⚠️  WARNING: Got 200 response instead of 402. Backend may not be following x402 spec.`);
             console.log(`   💡 Expected: 402 Payment Required → Create Payment → Retry with X-PAYMENT header → 200 OK`);
             console.log(`   🔍 Actual: 200 OK (payment may have been processed automatically)`);
+          }
+          if (response.status === 404) {
+            console.log(`   ❌ ERROR: 404 Not Found`);
+            console.log(`   💡 Check: Agent ID "${agentId}" might not exist or endpoint structure is incorrect`);
+            console.log(`   💡 Expected endpoint: ${this.baseUrl}/${this.chain}/${agentId}`);
+            if (response.data) {
+              console.log(`   📄 Response body: ${JSON.stringify(response.data).substring(0, 200)}`);
+            }
           }
         }
       } catch (error: any) {
@@ -330,11 +352,49 @@ export class AgentsApiClient {
 
         // Step 5: Retry request with X-PAYMENT header using resource URL from 402 response
         // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
-        const resourceUrl = acceptDetails.resource || `${this.baseUrl}/${this.chain}/${agentId}`;
+        // If resource is provided, use it (may be absolute or relative)
+        // Fix double /x402 prefix if present (backend may return incorrect resource URL)
+        let resourceUrl: string;
+        if (acceptDetails.resource) {
+          let resource = acceptDetails.resource;
+          
+          // Fix double /x402 prefix in absolute URLs (e.g., http://localhost:3007/x402/x402/...)
+          if (resource.includes('/x402/x402/')) {
+            resource = resource.replace('/x402/x402/', '/x402/');
+            if (this.verbose) {
+              console.log(`   🔧 Fixed double /x402 prefix in resource URL`);
+            }
+          }
+          
+          // If resource is absolute URL, use it (after fixing double prefix)
+          if (resource.startsWith('http://') || resource.startsWith('https://')) {
+            resourceUrl = resource;
+          } else {
+            // Relative path - handle /x402 prefix if present
+            let resourcePath = resource;
+            // If resource path starts with /x402, remove it since baseUrl already includes /x402
+            if (resourcePath.startsWith('/x402/')) {
+              resourcePath = resourcePath.substring(6); // Remove '/x402'
+            } else if (resourcePath.startsWith('/x402')) {
+              resourcePath = resourcePath.substring(5); // Remove '/x402'
+            }
+            // Ensure path starts with /
+            if (!resourcePath.startsWith('/')) {
+              resourcePath = '/' + resourcePath;
+            }
+            resourceUrl = `${this.baseUrl}${resourcePath}`;
+          }
+        } else {
+          // Fallback: construct from baseUrl (which already includes /x402)
+          resourceUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
+        }
         
         if (this.verbose) {
           console.log('   🔄 Step 3: Retrying request with payment');
           console.log(`      Resource URL: ${resourceUrl}`);
+          if (acceptDetails.resource) {
+            console.log(`      Original resource from 402: ${acceptDetails.resource}`);
+          }
         }
         
         response = await axios.post(
@@ -357,6 +417,14 @@ export class AgentsApiClient {
       }
 
       // Parse successful response (after payment)
+      // Handle empty or invalid responses
+      if (!response.data) {
+        throw new Error(
+          `Empty response from backend. Status: ${response.status}, URL: ${this.baseUrl}/${this.chain}/${agentId}. ` +
+          `Check that the backend is running and the endpoint exists.`
+        );
+      }
+      
       const data = response.data;
 
       // Step 6: Parse RECEIPT from success response (after payment)
@@ -471,6 +539,14 @@ export class AgentsApiClient {
             "Payment required but payment was rejected";
           throw new Error(
             `${errorMsg}. Check your USDC balance. If this is a new agent, ensure its USDC token account has been initialized (agent needs ~0.002 SOL for initial setup).`,
+          );
+        }
+
+        if (status === 404) {
+          const errorMsg = data?.error || data?.message || `Agent endpoint not found`;
+          throw new Error(
+            `${errorMsg}. Agent ID: "${agentId}", URL: ${this.baseUrl}/${this.chain}/${agentId}. ` +
+            `Check that the agent exists and the API URL is correct.`
           );
         }
 

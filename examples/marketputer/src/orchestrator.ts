@@ -191,19 +191,38 @@ export class Orchestrator {
 
   /**
    * Step 2: Discover trends using TrendPuter
+   * Uses the structured discover_trends command for reliable JSON parsing
    */
   private async discoverTrends(fixedTask: string, keywords: string[]): Promise<any> {
     this.logger.section('Step 2: Discover Trends', 'trendputer');
     
-    const keywordsContext = keywords.length > 0
-      ? ` Focus on: ${keywords.join(', ')}.`
-      : '';
+    const trendsResult = await this.hireAgentWithCommand('trendputer', 'discover_trends', {
+      keywords: keywords.length > 0 ? keywords : undefined,
+      context: fixedTask,
+      maxResults: 10,
+      includeHashtags: true,
+      includeUrl: true,
+    });
     
-    const trendPrompt = `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
+    // Log the raw command result for debugging
+    console.log('\n   📋 Trendputer Command Result:');
+    console.log(`   Response length: ${trendsResult.response?.length || 0} characters`);
+    console.log(`   Response preview: ${trendsResult.response?.substring(0, 500) || 'empty'}${trendsResult.response && trendsResult.response.length > 500 ? '...' : ''}`);
+    if (trendsResult.response) {
+      try {
+        const preview = JSON.parse(trendsResult.response);
+        console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+          itemsCount: preview.items?.length || 0,
+          hasMetadata: !!preview.metadata,
+          firstItemKeys: preview.items?.[0] ? Object.keys(preview.items[0]) : []
+        }, null, 2));
+      } catch {
+        console.log(`   ⚠️  Response is not valid JSON`);
+      }
+    }
+    console.log('');
     
-    const trendsResult = await this.hireAgent('trendputer', trendPrompt, {});
-    
-    // Parse trends response
+    // Parse trends response - guaranteed to be valid JSON
     try {
       const trends = JSON.parse(trendsResult.response);
       this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
@@ -216,29 +235,8 @@ export class Orchestrator {
         });
       }
       return trends;
-    } catch {
-      // Try to extract JSON from markdown code blocks
-      const jsonMatch = trendsResult.response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || 
-                       trendsResult.response.match(/(\{[\s\S]*"items"[\s\S]*\})/);
-      if (jsonMatch) {
-        try {
-          const trends = JSON.parse(jsonMatch[1]);
-          this.logger.result('✅', `Extracted ${trends?.items?.length || 0} trends from markdown`);
-          if (trends?.items && trends.items.length > 0) {
-            trends.items.forEach((trend: any, idx: number) => {
-              console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-              if (trend.summary) {
-                console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-              }
-            });
-          }
-          return trends;
-        } catch {
-          this.logger.warn('Failed to parse trends JSON');
-        }
-      } else {
-        this.logger.warn('No trends found in response');
-      }
+    } catch (error) {
+      this.logger.error(`Failed to parse trends: ${error instanceof Error ? error.message : error}`);
       return { items: [] };
     }
   }
@@ -257,7 +255,6 @@ export class Orchestrator {
     const trendItem = selectedTrend || trends?.items?.[0] || {
       title: fixedTask,
       summary: fixedTask,
-      source: 'USER',
     };
     
     if (brandProfile.brandAgentId) {
@@ -282,7 +279,7 @@ export class Orchestrator {
       this.logger.info(`Sending brandProfile to BriefPuter: ${brandProfile.brandName || 'Custom'}`);
     }
     
-    const briefResult = await this.hireAgent('briefputer', 'generate_brief', briefPayload);
+    const briefResult = await this.hireAgentWithCommand('briefputer', 'generate_brief', briefPayload);
     
     try {
       const parsed = JSON.parse(briefResult.response);
@@ -325,7 +322,7 @@ export class Orchestrator {
       this.logger.info(`Using ${brandProfile.referenceImageUrls.length} reference image(s)`);
     }
     
-    const imageResult = await this.hireAgent('pfpputer', 'pfp', {
+    const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp', {
       message: pfpCommand,
     });
     
@@ -383,7 +380,7 @@ export class Orchestrator {
     this.logger.section('Step 7: Describe Image', 'imagedescripterputer');
     
     try {
-      const descriptionResult = await this.hireAgent('imagedescripterputer', 'describe_image', {
+      const descriptionResult = await this.hireAgentWithCommand('imagedescripterputer', 'describe_image', {
         imageUrl: imageUrl,
         detailLevel: 'detailed',
       });
@@ -490,7 +487,6 @@ export class Orchestrator {
     const captionTrendItem = trends?.items?.[0] || {
       title: fixedTask,
       summary: fixedTask,
-      source: 'USER',
     };
     
     const numVariants = 3;
@@ -514,7 +510,7 @@ export class Orchestrator {
         captionPayload.brandProfile = brandProfile;
       }
       
-      const captionResult = await this.hireAgent('captionputer', 'generate_captions', captionPayload);
+      const captionResult = await this.hireAgentWithCommand('captionputer', 'generate_captions', captionPayload);
       
       try {
         const parsed = JSON.parse(captionResult.response);
@@ -598,7 +594,7 @@ export class Orchestrator {
     );
     
     try {
-      const telegramResult = await this.hireAgent('broadcastputer', 'post_telegram', {
+      const telegramResult = await this.hireAgentWithCommand('broadcastputer', 'post_telegram', {
         chatId: telegramChatId,
         caption: enhancedCaption,
         imageUrl: imageUrl || '',
@@ -718,7 +714,6 @@ export class Orchestrator {
             id: finalSelectedTrend.id,
             title: finalSelectedTrend.title,
             summary: finalSelectedTrend.summary,
-            source: finalSelectedTrend.source,
             score: finalSelectedTrend.score,
             hashtags: finalSelectedTrend.hashtags,
             canonicalUrl: finalSelectedTrend.canonicalUrl,
@@ -764,15 +759,14 @@ export class Orchestrator {
   }
 
   /**
-   * Hire an agent and track payment
+   * Hire an agent with a structured command and track payment
    * 
-   * Wraps memeputer.prompt() with payment tracking and logging.
    * This demonstrates agent-to-agent economy:
    * - The orchestrator agent pays from the provided wallet
    * - Each payment is tracked and deducted from the agent's budget
    * - The actual payment amount comes from the 402 receipt/quote
    */
-  private async hireAgent(
+  private async hireAgentWithCommand(
     agentId: string,
     command: string,
     payload: any
@@ -780,14 +774,9 @@ export class Orchestrator {
     this.logger.startLoading(`Calling ${agentId}...`);
     
     try {
-      // Determine if this is a natural language prompt or structured command
-      const isNaturalLanguage = Object.keys(payload).length === 0 && command.length > 50;
-      
-      // Call agent via SDK (payment handled internally by SDK)
+      // Call agent via SDK with structured command (payment handled internally by SDK)
       // SDK will automatically detect if command needs JSON format or CLI format
-      const result = isNaturalLanguage
-        ? await this.memeputer.prompt(agentId, command) // Natural language prompt
-        : await this.memeputer.command(agentId, command, payload); // Structured command - SDK handles format
+      const result = await this.memeputer.command(agentId, command, payload);
       
       this.logger.stopLoading(`Completed ${agentId}`);
 
@@ -806,6 +795,70 @@ export class Orchestrator {
         this.payments.push({
           agentId,
           command,
+          amount: actualAmount,
+          txId: result.transactionSignature,
+        });
+
+        // Log payment details - use receipt amount (actual paid) for display
+        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
+        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
+        const paymentAmount = result.x402Receipt?.amountPaidUsdc || actualAmount;
+        
+        this.logger.payment({
+          agentId,
+          amount: paymentAmount,
+          transactionSignature: result.transactionSignature,
+          txUrl: getTxUrl(result.transactionSignature, this.network),
+          fromWallet: payer,
+          fromWalletUrl: getAccountUrl(payer, this.network),
+          toWallet: merchant,
+          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
+          receiptAmount: result.x402Receipt?.amountPaidUsdc,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.failLoading(`Failed to pay ${agentId}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Hire an agent with a natural language prompt and track payment
+   * 
+   * This demonstrates agent-to-agent economy:
+   * - The orchestrator agent pays from the provided wallet
+   * - Each payment is tracked and deducted from the agent's budget
+   * - The actual payment amount comes from the 402 receipt/quote
+   */
+  private async hireAgentWithPrompt(
+    agentId: string,
+    prompt: string
+  ): Promise<PromptResult> {
+    this.logger.startLoading(`Calling ${agentId}...`);
+    
+    try {
+      // Call agent via SDK with natural language prompt (payment handled internally by SDK)
+      const result = await this.memeputer.prompt(agentId, prompt);
+      
+      this.logger.stopLoading(`Completed ${agentId}`);
+
+      // Track payment if transaction occurred
+      if (result.transactionSignature) {
+        // Receipt should always be present after payment - quote is only in 402 response before payment
+        if (!result.x402Receipt?.amountPaidUsdc) {
+          throw new Error(`Payment transaction exists but no receipt amount found for ${agentId}`);
+        }
+        
+        // Use receipt amount (actual paid) - this is what we actually spent
+        const actualAmount = result.x402Receipt.amountPaidUsdc;
+        
+        this.totalSpent += actualAmount;
+        this.agentsHired.push(agentId);
+        this.payments.push({
+          agentId,
+          command: 'prompt',
           amount: actualAmount,
           txId: result.transactionSignature,
         });
@@ -940,15 +993,6 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
       const keywordMatches = taskKeywords.filter(kw => trendText.includes(kw)).length;
       score += keywordMatches * 5;
       
-      // Source quality boost (all sources treated equally for quality)
-      if (trend.source === 'DEXSCREENER' || trend.source === 'BIRDEYE') {
-        score += 15; // Higher quality sources
-      } else if (trend.source === 'X') {
-        score += 10;
-      } else if (trend.source === 'RSS') {
-        score += 5;
-      }
-      
       // Boost if has URL (more credible)
       if (trend.canonicalUrl) {
         score += 5;
@@ -1040,11 +1084,11 @@ Respond in this exact JSON format:
           agentId: 'briefputer',
           amount: paymentAmount,
           transactionSignature: result.transactionSignature,
-          txUrl: getSolscanTxUrl(result.transactionSignature, this.network),
+          txUrl: getTxUrl(result.transactionSignature, this.network),
           fromWallet: payer,
-          fromWalletUrl: getSolscanAccountUrl(payer, this.network),
+          fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
-          toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
+          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
           receiptAmount: result.x402Receipt?.amountPaidUsdc,
         });
       }
@@ -1129,11 +1173,11 @@ Make it compelling and detailed while keeping the core concept. Return ONLY the 
           agentId: 'promptputer',
           amount: paymentAmount,
           transactionSignature: result.transactionSignature,
-          txUrl: getSolscanTxUrl(result.transactionSignature, this.network),
+          txUrl: getTxUrl(result.transactionSignature, this.network),
           fromWallet: payer,
-          fromWalletUrl: getSolscanAccountUrl(payer, this.network),
+          fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
-          toWalletUrl: merchant ? getSolscanAccountUrl(merchant, this.network) : undefined,
+          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
           receiptAmount: result.x402Receipt?.amountPaidUsdc,
         });
       }

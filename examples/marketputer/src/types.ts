@@ -61,7 +61,6 @@ export interface TaskResult {
         id?: string;
         title?: string;
         summary?: string;
-        source?: string;
         score?: number;
         hashtags?: string[];
         canonicalUrl?: string | null;
@@ -70,7 +69,6 @@ export interface TaskResult {
         id?: string;
         title?: string;
         summary?: string;
-        source?: string;
         score?: number;
         hashtags?: string[];
         canonicalUrl?: string | null;

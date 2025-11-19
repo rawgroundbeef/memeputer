@@ -148,7 +148,7 @@ export class Memeputer {
     }
     
     // Commands that expect JSON payloads (not CLI format) - only for commands that need JSON even with simple params
-    const jsonPayloadCommands = ['describe_image', 'generate_captions', 'post_telegram'];
+    const jsonPayloadCommands = ['describe_image', 'generate_captions', 'post_telegram', 'discover_trends'];
     const needsJsonPayload = jsonPayloadCommands.includes(cmd);
     
     // Check if params contain complex objects (not just primitives)
