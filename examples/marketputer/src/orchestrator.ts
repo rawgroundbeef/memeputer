@@ -1133,33 +1133,55 @@ Respond in this exact JSON format:
   /**
    * Step 5: Enhance Image Prompt
    * Uses Promptputer to refine and enhance the image generation prompt with quality modifiers
+   * Uses the structured enhance_prompt command for reliable JSON parsing
    */
   private async enhanceImagePrompt(basePrompt: string): Promise<string> {
-    const enhancementPrompt = `I need to create a high-quality image generation prompt.
-
-Base concept: "${basePrompt}"
-
-Please enhance this prompt to create a detailed, artistic, high-quality image generation prompt. Add quality modifiers like:
-- Highly detailed, 8K render, professional quality
-- Cinematic lighting, vibrant colors, sharp focus
-- Artistic composition, trending on artstation style
-- Award winning, masterpiece quality
-
-Make it compelling and detailed while keeping the core concept. Return ONLY the enhanced prompt, nothing else.`;
-
     try {
       // Step 5: Enhance Image Prompt - Uses Promptputer to enhance prompt with quality modifiers
-      const result = await this.memeputer.prompt(
-        'promptputer',
-        enhancementPrompt
-      );
+      const commandParams = {
+        basePrompt: basePrompt,
+        qualityModifiers: ['8K', 'cinematic', 'artstation', 'highly detailed', 'professional quality'],
+        style: 'artistic',
+        detailLevel: 'high',
+        includeTechnicalSpecs: true,
+        tone: 'dramatic',
+      };
+      
+      // Log input parameters
+      console.log('\n   📋 Promptputer Command Input:');
+      console.log(`   Base Prompt: ${basePrompt.substring(0, 100)}${basePrompt.length > 100 ? '...' : ''}`);
+      console.log(`   Quality Modifiers: ${commandParams.qualityModifiers.join(', ')}`);
+      console.log(`   Style: ${commandParams.style}, Detail Level: ${commandParams.detailLevel}, Tone: ${commandParams.tone}`);
+      console.log('');
+      
+      const result = await this.hireAgentWithCommand('promptputer', 'enhance_prompt', commandParams);
+      
+      // Log the raw command result for debugging
+      console.log('\n   📋 Promptputer Command Result:');
+      console.log(`   Response length: ${result.response?.length || 0} characters`);
+      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
+      if (result.response) {
+        try {
+          const preview = JSON.parse(result.response);
+          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+            hasEnhancedPrompt: !!preview.enhancedPrompt,
+            enhancedPromptLength: preview.enhancedPrompt?.length || 0,
+            modifiersApplied: preview.modifiersApplied?.length || 0,
+            style: preview.style,
+            detailLevel: preview.detailLevel,
+          }, null, 2));
+        } catch {
+          console.log(`   ⚠️  Response is not valid JSON`);
+        }
+      }
+      console.log('');
 
       if (result.transactionSignature) {
         const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01;
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'promptputer',
-          command: 'enhance-image-prompt',
+          command: 'enhance_prompt',
           amount: actualAmount,
           txId: result.transactionSignature,
         });
@@ -1182,10 +1204,29 @@ Make it compelling and detailed while keeping the core concept. Return ONLY the 
         });
       }
 
-      // Return the enhanced prompt (cleaned up)
-      const enhanced = result.response.trim();
-      // Remove any quotes or markdown formatting
-      return enhanced.replace(/^["']|["']$/g, '').replace(/^```[\w]*\n?|\n?```$/g, '').trim();
+      // Parse JSON response - guaranteed to be valid JSON
+      try {
+        const parsed = JSON.parse(result.response);
+        const enhancedPrompt = parsed.enhancedPrompt || result.response;
+        this.logger.result('✅', 'Got enhanced prompt');
+        
+        // Log the enhanced prompt output
+        console.log('   📝 Enhanced Prompt Output:');
+        console.log(`   ${enhancedPrompt.substring(0, 200)}${enhancedPrompt.length > 200 ? '...' : ''}`);
+        if (parsed.modifiersApplied && parsed.modifiersApplied.length > 0) {
+          console.log(`   Modifiers Applied: ${parsed.modifiersApplied.join(', ')}`);
+        }
+        console.log('');
+        
+        return enhancedPrompt.trim();
+      } catch (parseError) {
+        // If JSON parsing fails, fall back to raw response
+        this.logger.warn('Failed to parse enhanced prompt as JSON, using raw response');
+        console.log('   ⚠️  Using raw response (not JSON):');
+        console.log(`   ${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}`);
+        console.log('');
+        return result.response.trim();
+      }
     } catch (error) {
       this.logger.warn(`Prompt enhancement failed, using base prompt: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return basePrompt; // Fallback to base prompt
