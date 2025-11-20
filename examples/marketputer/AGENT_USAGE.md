@@ -2,15 +2,16 @@
 
 ## Agents Used
 
-Marketputer coordinates **7 different agents** across 9 workflow steps:
+Marketputer coordinates **8 different agents** across 9 workflow steps:
 
-1. **briefputer** - Used 3 times (Steps 1, 3, 4)
-2. **trendputer** - Used 1 time (Step 2)
-3. **promptputer** - Used 1 time (Step 5)
-4. **pfpputer** - Used 1 time (Step 6)
-5. **imagedescripterputer** - Used 1 time (Step 7)
-6. **captionputer** - Used 1 time (Step 8)
-7. **broadcastputer** - Used 1 time (Step 9)
+1. **keywordputer** - Used 1 time (Step 1) ✅ Command-based
+2. **trendputer** - Used 1 time (Step 2) ✅ Command-based
+3. **briefputer** - Used 2 times (Steps 3, 4)
+4. **promptputer** - Used 1 time (Step 5) ✅ Command-based
+5. **pfpputer** - Used 1 time (Step 6)
+6. **imagedescripterputer** - Used 1 time (Step 7)
+7. **captionputer** - Used 1 time (Step 8)
+8. **broadcastputer** - Used 1 time (Step 9)
 
 ## Current Usage: Commands vs Prompts
 
@@ -18,7 +19,10 @@ Marketputer coordinates **7 different agents** across 9 workflow steps:
 
 | Agent | Step | Command | Payload Structure |
 |-------|------|---------|-------------------|
+| **keywordputer** | Step 1 | `extract_keywords` | `{ task, context, targetAudience, contentGoal, maxKeywords }` |
+| **trendputer** | Step 2 | `discover_trends` | `{ keywords, context, maxResults, includeHashtags, includeUrl }` |
 | **briefputer** | Step 4 | `generate_brief` | `{ trendItem, brandProfile/brandAgentId, policy }` |
+| **promptputer** | Step 5 | `enhance_prompt` | `{ basePrompt, qualityModifiers, style, detailLevel, tone, includeTechnicalSpecs }` |
 | **pfpputer** | Step 6 | `pfp` | `{ message: "/pfp generate ..." }` |
 | **imagedescripterputer** | Step 7 | `describe_image` | `{ imageUrl, detailLevel }` |
 | **captionputer** | Step 8 | `generate_captions` | `{ imageDescription, imagePrompt, trendItem, brief, brandProfile, numVariants }` |
@@ -28,76 +32,65 @@ Marketputer coordinates **7 different agents** across 9 workflow steps:
 
 | Agent | Step | Prompt Type | Current Implementation |
 |-------|------|-------------|------------------------|
-| **briefputer** | Step 1 | Natural language | Asks "What should I focus on?" with JSON format request |
-| **trendputer** | Step 2 | Natural language | Asks for 10 trends as JSON: `{"items": [...]}` |
 | **briefputer** | Step 3 | Natural language | Asks to evaluate trends and return number (1-N) |
-| **promptputer** | Step 5 | Natural language | Asks to enhance prompt with quality modifiers |
 
-## Recommendations: Which Could Benefit from Commands?
+## Recent Conversions: Commands Implemented ✅
 
-### 🎯 High Priority: Convert to Commands
+### ✅ Completed Conversions
 
-#### 1. **trendputer** (Step 2) - **STRONGLY RECOMMENDED**
-**Current:** Natural language prompt asking for JSON
+#### 1. **keywordputer** (Step 1) - **COMPLETED**
+**Previous:** briefputer prompt asking for JSON
+**Now:** `extract_keywords` command
 ```typescript
-const trendPrompt = `Investigate the most compelling news stories of the day.${keywordsContext} Context: ${fixedTask}. Return exactly 10 trends as JSON: {"items": [{"title": "...", "summary": "..."}]}`;
+await this.hireAgentWithCommand('keywordputer', 'extract_keywords', {
+  task: task,
+  context: 'Creating content for Solana community',
+  targetAudience: 'Solana degens',
+  contentGoal: 'meme',
+  maxKeywords: 10,
+});
 ```
 
-**Recommended Command:**
+**Benefits Achieved:**
+- ✅ Reliable JSON parsing with `{ "data": { "keywords": [...] } }` format
+- ✅ Clear parameter structure
+- ✅ Better error handling
+- ✅ Replaced briefputer's Step 1 functionality with specialized agent
+
+#### 2. **trendputer** (Step 2) - **COMPLETED**
+**Previous:** Natural language prompt asking for JSON
+**Now:** `discover_trends` command
 ```typescript
-await this.hireAgent('trendputer', 'discover_trends', {
+await this.hireAgentWithCommand('trendputer', 'discover_trends', {
   keywords: keywords,
   context: fixedTask,
   maxResults: 10,
-  sources: ['DEXSCREENER', 'BIRDEYE', 'X', 'RSS'] // optional
+  includeHashtags: true,
+  includeUrl: true,
 });
 ```
 
-**Benefits:**
-- ✅ More reliable JSON parsing (no markdown extraction needed)
+**Benefits Achieved:**
+- ✅ Reliable JSON parsing (no markdown extraction needed)
 - ✅ Clearer parameter structure
 - ✅ Better type safety
-- ✅ Easier to extend (add filters, sources, etc.)
-- ✅ Currently has fragile JSON parsing logic (lines 207-243)
+- ✅ Easier to extend
 
-#### 2. **briefputer** (Step 1) - **RECOMMENDED**
-**Current:** Natural language prompt asking for JSON
+#### 3. **promptputer** (Step 5) - **COMPLETED**
+**Previous:** Natural language prompt asking to enhance prompt
+**Now:** `enhance_prompt` command
 ```typescript
-const prompt = `I'm an orchestrator agent with a task: "${task}"
-...Respond in this exact JSON format: { "focusArea": "...", "keywords": [...], ... }`;
-```
-
-**Recommended Command:**
-```typescript
-await this.hireAgent('briefputer', 'analyze_task', {
-  task: task,
-  returnFormat: 'structured' // or just always return structured
-});
-```
-
-**Benefits:**
-- ✅ More reliable than parsing free-form JSON
-- ✅ Clearer intent
-- ✅ Better error handling
-
-#### 3. **promptputer** (Step 5) - **MODERATE PRIORITY**
-**Current:** Natural language prompt asking to enhance prompt
-```typescript
-const enhancementPrompt = `I need to create a high-quality image generation prompt.
-Base concept: "${basePrompt}"
-Please enhance this prompt...`;
-```
-
-**Recommended Command:**
-```typescript
-await this.hireAgent('promptputer', 'enhance_prompt', {
+await this.hireAgentWithCommand('promptputer', 'enhance_prompt', {
   basePrompt: basePrompt,
-  qualityModifiers: ['8K', 'cinematic', 'artstation'], // optional
-  style: 'artistic' // optional
+  qualityModifiers: ['8K', 'cinematic', 'artstation', 'highly detailed', 'professional quality'],
+  style: 'artistic',
+  detailLevel: 'high',
+  includeTechnicalSpecs: true,
+  tone: 'dramatic',
 });
 ```
 
-**Benefits:**
+**Benefits Achieved:**
 - ✅ More consistent output
 - ✅ Easier to customize quality modifiers
 - ✅ Better for programmatic use
@@ -134,23 +127,36 @@ await this.hireAgent('briefputer', 'evaluate_trends', {
 
 ## Summary Table
 
-| Agent | Step | Current | Recommended | Priority | Reason |
-|-------|------|---------|--------------|----------|--------|
-| trendputer | 2 | Prompt | Command | 🔴 High | Fragile JSON parsing, clear parameters |
-| briefputer | 1 | Prompt | Command | 🟡 Medium | More reliable than JSON parsing |
-| briefputer | 3 | Prompt | Command (optional) | 🟢 Low | Evaluation is open-ended, but could be structured |
-| promptputer | 5 | Prompt | Command | 🟡 Medium | More consistent output, easier customization |
-| briefputer | 4 | Command | ✅ Keep | - | Already using command |
-| pfpputer | 6 | Command | ✅ Keep | - | Already using command |
-| imagedescripterputer | 7 | Command | ✅ Keep | - | Already using command |
-| captionputer | 8 | Command | ✅ Keep | - | Already using command |
-| broadcastputer | 9 | Command | ✅ Keep | - | Already using command |
+| Agent | Step | Current | Status | Notes |
+|-------|------|---------|--------|-------|
+| keywordputer | 1 | Command | ✅ Complete | Replaced briefputer Step 1 |
+| trendputer | 2 | Command | ✅ Complete | Converted from prompt |
+| briefputer | 3 | Prompt | 🔄 Optional | Evaluation is open-ended, could be structured |
+| briefputer | 4 | Command | ✅ Keep | Already using command |
+| promptputer | 5 | Command | ✅ Complete | Converted from prompt |
+| pfpputer | 6 | Command | ✅ Keep | Already using command |
+| imagedescripterputer | 7 | Command | ✅ Keep | Already using command |
+| captionputer | 8 | Command | ✅ Keep | Already using command |
+| broadcastputer | 9 | Command | ✅ Keep | Already using command |
+
+## Conversion Progress
+
+- ✅ **7 out of 9 steps** now use structured commands (78%)
+- ✅ **3 recent conversions**: keywordputer, trendputer, promptputer
+- 🔄 **1 remaining prompt**: briefputer Step 3 (evaluation - optional conversion)
 
 ## Implementation Notes
 
-The `hireAgent()` method automatically detects whether to use `prompt()` or `command()` based on:
-- If `payload` is empty AND `command.length > 50` → uses `prompt()`
-- Otherwise → uses `command()`
+The orchestrator now uses explicit methods:
+- `hireAgentWithCommand()` - For structured commands with JSON payloads
+- `hireAgentWithPrompt()` - For natural language prompts
 
-This means converting to commands is straightforward - just pass structured payloads instead of empty objects.
+**Command-based agents** send structured JSON payloads via the SDK's `command()` method, which routes to the appropriate endpoint based on the command name. Commands like `extract_keywords`, `discover_trends`, and `enhance_prompt` are automatically sent as JSON payloads (not CLI format).
+
+**Benefits of command-based approach:**
+- ✅ Reliable JSON parsing (no markdown extraction)
+- ✅ Type-safe parameters
+- ✅ Better error handling
+- ✅ Easier to test and debug
+- ✅ Clear API contracts
 

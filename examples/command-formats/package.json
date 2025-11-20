@@ -1,0 +1,27 @@
+{
+  "name": "command-formats",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test examples for different command format variations",
+  "type": "module",
+  "scripts": {
+    "test:1": "tsx test-1-single-arg.ts",
+    "test:2": "tsx test-2-single-arg-quoted.ts",
+    "test:3": "tsx test-3-cli-flags.ts",
+    "test:4": "tsx test-4-json-format.ts",
+    "test:5": "tsx test-5-mixed-format.ts",
+    "test:all": "pnpm test:1 && pnpm test:2 && pnpm test:3 && pnpm test:4 && pnpm test:5"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@memeputer/sdk": "^1.2.1",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "tsx": "^4.16.0",
+    "typescript": "^5.6.3"
+  }
+}
+

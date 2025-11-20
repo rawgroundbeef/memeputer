@@ -59,12 +59,12 @@ export class Orchestrator {
     try {
       this.logger.section('Orchestrator Agent', `Task: "${fixedTask}" | Budget: ${request.budgetUsdc} USDC`);
 
-      // Step 1: What's the Plan?
-      this.logger.section('Step 1: What\'s the Plan?', 'briefputer');
+      // Step 1: Extract Keywords
+      this.logger.section('Step 1: Extract Keywords', 'keywordputer');
       this.logger.startLoading('Processing...');
       const focusPlan = await this.whatShouldIFocusOn(fixedTask);
       this.logger.stopLoading();
-      this.logger.result('✅', `Focus plan: ${focusPlan.keywords?.length || 0} keywords identified`);
+      this.logger.result('✅', `Extracted ${focusPlan.keywords?.length || 0} keywords`);
       if (focusPlan.keywords && focusPlan.keywords.length > 0) {
         this.logger.info(`Keywords: ${focusPlan.keywords.join(', ')}`);
       }
@@ -1035,9 +1035,9 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
   }
 
   /**
-   * Step 1: What's the Plan?
-   * Uses Briefputer to analyze the task and identify relevant keywords and topics
-   * This helps TrendPuter know what keywords/topics to investigate
+   * Step 1: Extract Keywords
+   * Uses Keywordputer to extract relevant keywords from the task
+   * Uses the structured extract_keywords command for reliable JSON parsing
    */
   private async whatShouldIFocusOn(task: string): Promise<{
     focusArea: string;
@@ -1045,80 +1045,73 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
     topics: string[];
     reasoning: string;
   }> {
-    const prompt = `I'm an orchestrator agent with a task: "${task}"
+    const commandParams = {
+      task: task,
+      context: 'Creating content for Solana community',
+      targetAudience: 'Solana degens',
+      contentGoal: 'meme',
+      maxKeywords: 10,
+    };
 
-Before I start looking for trends, help me think about what I should focus on. Consider:
-- What topics would be most relevant to this task?
-- What keywords or themes should I investigate?
-- What's the goal of this content?
-
-Respond in this exact JSON format:
-{
-  "focusArea": "1-2 sentence description of primary focus",
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "topics": ["crypto", "tech", "culture"],
-  "reasoning": "Why these topics/keywords are relevant"
-}`;
+    // Log input parameters
+    console.log('\n   📋 Keywordputer Command Input:');
+    console.log(`   Task: "${task}"`);
+    console.log(`   Context: ${commandParams.context}`);
+    console.log(`   Target Audience: ${commandParams.targetAudience}`);
+    console.log(`   Content Goal: ${commandParams.contentGoal}`);
+    console.log(`   Max Keywords: ${commandParams.maxKeywords}`);
 
     try {
-      // Step 1: What's the Plan?
-      // Use Briefputer to analyze task and identify keywords/topics
-      const result = await this.memeputer.prompt('briefputer', prompt);
+      // Step 1: Extract Keywords using Keywordputer command
+      const result = await this.hireAgentWithCommand('keywordputer', 'extract_keywords', commandParams);
 
-      if (result.transactionSignature) {
-        const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01;
-        const paymentAmount = result.x402Quote?.amountQuotedUsdc || actualAmount;
-        this.totalSpent += actualAmount;
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'what-should-i-focus-on',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-        
-        // Log payment
-        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
-        
-        this.logger.payment({
-          agentId: 'briefputer',
-          amount: paymentAmount,
-          transactionSignature: result.transactionSignature,
-          txUrl: getTxUrl(result.transactionSignature, this.network),
-          fromWallet: payer,
-          fromWalletUrl: getAccountUrl(payer, this.network),
-          toWallet: merchant,
-          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: result.x402Receipt?.amountPaidUsdc,
-        });
+      // Log the raw command result for debugging
+      console.log('\n   📋 Keywordputer Command Result:');
+      console.log(`   Response length: ${result.response?.length || 0} characters`);
+      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
+      if (result.response) {
+        try {
+          const preview = JSON.parse(result.response);
+          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+            hasData: !!preview.data,
+            keywordsCount: preview.data?.keywords?.length || 0,
+            keywords: preview.data?.keywords || []
+          }, null, 2));
+        } catch {
+          console.log(`   ⚠️  Response is not valid JSON`);
+        }
       }
+      console.log('');
 
-      // Try to parse JSON response
+      // Parse response - guaranteed format: { "data": { "keywords": [...] } }
       try {
         const parsed = JSON.parse(result.response);
+        const keywords = parsed.data?.keywords || [];
+        
+        this.logger.result('✅', `Extracted ${keywords.length} keywords`);
+        if (keywords.length > 0) {
+          this.logger.info(`   Keywords: ${keywords.join(', ')}`);
+        }
+        
         return {
-          focusArea: parsed.focusArea || task,
-          keywords: parsed.keywords || [],
-          topics: parsed.topics || ['crypto', 'tech'],
-          reasoning: parsed.reasoning || 'No reasoning provided',
+          focusArea: task,
+          keywords: keywords,
+          topics: keywords.slice(0, 3), // Use first 3 keywords as topics
+          reasoning: `Extracted ${keywords.length} keywords from task`,
         };
-      } catch {
-        // If not JSON, extract keywords from text
-        const response = result.response.trim();
-        // Extract keywords (simple heuristic)
-        const keywordMatches = response.match(/(?:keywords?|focus|topics?):\s*([^\n]+)/i);
-        const keywords = keywordMatches 
-          ? keywordMatches[1].split(',').map(k => k.trim()).filter(k => k.length > 0)
-          : [];
+      } catch (parseError) {
+        this.logger.error(`Failed to parse keywords: ${parseError instanceof Error ? parseError.message : parseError}`);
+        // Fallback: Extract keywords from task
+        const taskKeywords = task.toLowerCase().split(/\s+/).filter(w => w.length > 3);
         return {
-          focusArea: response.substring(0, 200),
-          keywords: keywords.length > 0 ? keywords : [],
-          topics: ['crypto', 'tech', 'culture'],
-          reasoning: response,
+          focusArea: task,
+          keywords: taskKeywords.slice(0, 5),
+          topics: ['crypto', 'tech'],
+          reasoning: 'Using task keywords as fallback',
         };
       }
     } catch (error) {
-      this.logger.warn('AI focus planning failed, using fallback');
+      this.logger.warn('Keyword extraction failed, using fallback');
       // Fallback: Extract keywords from task
       const taskKeywords = task.toLowerCase().split(/\s+/).filter(w => w.length > 3);
       return {
