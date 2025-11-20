@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "tsx test-agent.ts",
-    "test:keywordputer": "tsx test-keywordputer.ts"
+    "test:keywordputer": "tsx test-keywordputer.ts",
+    "test:ping": "tsx test-ping.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

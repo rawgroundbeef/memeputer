@@ -100,6 +100,11 @@ export class AgentsApiClient {
   /**
    * Interact with an agent using x402 payment
    * Manual x402 flow: 402 → create payment → retry with X-PAYMENT header
+   * 
+   * @param message - The message or command to send. Can be:
+   *   - Natural language prompt (e.g., "Hello, how are you?")
+   *   - CLI format command (e.g., "/ping" or "/ping --arg value")
+   *   - JSON string with command (e.g., '{"command":"ping"}')
    */
   async interact(
     agentId: string,
@@ -124,19 +129,81 @@ export class AgentsApiClient {
       // Example: http://localhost:3007/x402/solana/trendputer
       const requestUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
       
-      // Always log URL construction for debugging
+      // Detect if message is a command without parameters
+      // Backend expects: { command: "ping" } for commands without params
+      // Backend expects: { message: "..." } for prompts or commands with params
+      let requestBody: { message?: string; command?: string } = {};
+      
+      // Handle empty string - treat as no message
+      if (!message || message.trim() === '') {
+        requestBody = {}; // Send empty body (backend should handle this)
+      } else {
+        const isCliCommand = message.startsWith('/');
+        let commandName: string | undefined;
+        
+        // Try to parse as JSON to check if it's a JSON command
+        try {
+          const parsed = JSON.parse(message);
+          if (parsed.command) {
+            commandName = parsed.command;
+            // If JSON command has no params (only command field), send as { command: "ping" }
+            const hasParams = Object.keys(parsed).filter(k => k !== 'command').length > 0;
+            if (!hasParams) {
+              requestBody = { command: commandName };
+            } else {
+              // JSON command with params - send as message (backend will parse it)
+              requestBody = { message };
+            }
+          } else {
+            // JSON but not a command - send as message
+            requestBody = { message };
+          }
+        } catch {
+          // Not JSON - check if it's a CLI command
+          if (isCliCommand) {
+            // Extract command name (e.g., "/ping" -> "ping", "/ping arg" -> "ping")
+            commandName = message.substring(1).trim().split(/\s+/)[0];
+            // If CLI command has no params (just "/ping"), send as { command: "ping" }
+            const parts = message.substring(1).trim().split(/\s+/);
+            const hasParams = parts.length > 1;
+            if (!hasParams && commandName) {
+              requestBody = { command: commandName };
+            } else {
+              // CLI command with params - send as message
+              requestBody = { message };
+            }
+          } else {
+            // Natural language prompt - send as message
+            requestBody = { message };
+          }
+        }
+      }
+      
+      // Always log URL construction and request body for debugging
       console.log(`\n   🔍 URL Construction Debug:`);
       console.log(`   📋 Base URL: ${this.baseUrl}`);
       console.log(`   🔗 Chain: ${this.chain}`);
       console.log(`   👤 Agent ID: ${agentId}`);
       console.log(`   🔗 Final Request URL: ${requestUrl}`);
-      console.log(`   📝 Message preview: ${message.substring(0, 150)}${message.length > 150 ? '...' : ''}\n`);
+      console.log(`\n   📦 Request Payload:`);
+      console.log(`   ${JSON.stringify(requestBody, null, 2).split('\n').join('\n   ')}`);
+      if (requestBody.command) {
+        console.log(`   ✅ Using 'command' field (no 'message' field)`);
+      } else if (requestBody.message) {
+        console.log(`   ✅ Using 'message' field`);
+        if (requestBody.message.length > 200) {
+          console.log(`   📝 Message preview: ${requestBody.message.substring(0, 200)}...`);
+        }
+      } else {
+        console.log(`   ⚠️  Empty request body (no 'message' or 'command' field)`);
+      }
+      console.log('');
       
       let response;
       try {
         response = await axios.post(
           requestUrl,
-          { message },
+          requestBody,
           {
             headers: {
               "Content-Type": "application/json",
@@ -149,7 +216,7 @@ export class AgentsApiClient {
         // Log response status
         if (this.verbose) {
           console.log(`   📡 HTTP Response Status: ${response.status}`);
-          console.log(`   📝 Message: ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`);
+          console.log(`   📦 Request Payload Sent: ${JSON.stringify(requestBody)}`);
           if (response.status === 200) {
             console.log(`   ⚠️  WARNING: Got 200 response instead of 402. Backend may not be following x402 spec.`);
             console.log(`   💡 Expected: 402 Payment Required → Create Payment → Retry with X-PAYMENT header → 200 OK`);

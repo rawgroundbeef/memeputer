@@ -22,19 +22,31 @@ pnpm test promptputer enhance_prompt '{"basePrompt":"a cat"}'
 pnpm test trendputer discover_trends '{"keywords":["crypto"],"maxResults":5}'
 ```
 
-## Testing Keywordputer
+## Testing Commands
 
+### Test Keywordputer
 ```bash
 # Quick test with predefined params (uses production by default)
 pnpm test:keywordputer
 
 # Or test with custom params
 pnpm test keywordputer extract_keywords '{"task":"Find relevant topics and create a meme about them"}'
-
-# To test against localhost, set the API URL:
-# export MEMEPUTER_API_URL="http://localhost:3007/x402"
-# pnpm test:keywordputer
 ```
+
+### Test Command Without Parameters (ping)
+```bash
+# Test ping command (no parameters)
+pnpm test:ping
+
+# To test against localhost:
+# export MEMEPUTER_API_URL="http://localhost:3007/x402"
+# pnpm test:ping
+```
+
+**Expected Behavior:**
+- SDK should send `{ "command": "ping" }` (no `message` field)
+- Backend should handle the command correctly
+- No errors about undefined message field
 
 ## Configuration
 
