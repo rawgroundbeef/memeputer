@@ -299,8 +299,11 @@ export function createRunCommand(): Command {
               if (result.artifacts.imageGeneration) {
                 const img = result.artifacts.imageGeneration;
                 console.log(`\n🎨 Image Generation:`);
-                if (img.prompt) {
-                  console.log(`   Prompt: ${img.prompt}`);
+                // Show trend title instead of long prompt
+                if (result.artifacts.trends?.selectedTrend?.title) {
+                  console.log(`   Trend: ${result.artifacts.trends.selectedTrend.title}`);
+                } else if (result.artifacts.trends?.items?.[0]?.title) {
+                  console.log(`   Trend: ${result.artifacts.trends.items[0].title}`);
                 }
                 if (img.imageUrl) {
                   console.log(`   Image URL: ${img.imageUrl}`);

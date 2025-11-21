@@ -139,6 +139,8 @@ describe('Orchestrator', () => {
       vi.spyOn(orchestrator as any, 'broadcastToTelegram').mockResolvedValue({
         telegram: 'https://t.me/test/123',
       });
+      // Mock waitForImageReady to avoid real HTTP requests
+      vi.spyOn(orchestrator as any, 'waitForImageReady').mockResolvedValue('https://example.com/image.png');
     });
 
     it('should reset tracking variables at start', async () => {

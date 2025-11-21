@@ -1,8 +1,8 @@
 {
-  "name": "command-formats",
+  "name": "integration-test-command-formats",
   "version": "1.0.0",
   "private": true,
-  "description": "Test examples for different command format variations",
+  "description": "Integration tests for command format parsing (CLI vs JSON)",
   "type": "module",
   "scripts": {
     "test:1": "tsx test-1-single-arg.ts",

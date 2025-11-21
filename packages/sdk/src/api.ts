@@ -101,17 +101,27 @@ export class AgentsApiClient {
    * Interact with an agent using x402 payment
    * Manual x402 flow: 402 → create payment → retry with X-PAYMENT header
    * 
+   * @param agentId - The agent ID to interact with
    * @param message - The message or command to send. Can be:
    *   - Natural language prompt (e.g., "Hello, how are you?")
    *   - CLI format command (e.g., "/ping" or "/ping --arg value")
    *   - JSON string with command (e.g., '{"command":"ping"}')
+   * @param wallet - Wallet for payment (Solana Keypair or EVM wallet)
+   * @param connection - Connection/provider (Solana Connection or EVM provider)
+   * @param command - Optional: Command name for command-specific endpoint (e.g., "discover_trends")
+   * @param params - Optional: Structured parameters for command-specific endpoint
    */
   async interact(
     agentId: string,
     message: string,
     wallet: Keypair | any, // Support both Solana Keypair and EVM wallets
     connection: Connection | any, // Support both Solana Connection and EVM providers
+    command?: string, // Optional: Command name for command-specific endpoint
+    params?: Record<string, any>, // Optional: Structured parameters for command-specific endpoint
   ): Promise<InteractionResult> {
+    // Determine endpoint type early so it's accessible in error handler
+    const useCommandEndpoint = command && params && Object.keys(params).length > 0;
+    
     try {
       // Variables to track payment quote and details
       let amountUsdc: number | undefined;
@@ -124,57 +134,77 @@ export class AgentsApiClient {
       let normalizedNetwork: string = 'solana'; // Network from 402 response
       
       // Step 1: Make request without payment (will get 402)
-      // Construct URL: baseUrl should be like "http://localhost:3007/x402" or "https://agents.memeputer.com/x402"
-      // Final URL should be: baseUrl/chain/agentId
-      // Example: http://localhost:3007/x402/solana/trendputer
-      const requestUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
+      // Construct URL: Use command-specific endpoint if command and params provided
+      // Base endpoint: baseUrl/chain/agentId (e.g., /x402/solana/trendputer)
+      // Command endpoint: baseUrl/chain/agentId/command (e.g., /x402/solana/trendputer/discover_trends)
+      let requestUrl: string;
       
-      // Detect if message is a command without parameters
-      // Backend expects: { command: "ping" } for commands without params
-      // Backend expects: { message: "..." } for prompts or commands with params
-      let requestBody: { message?: string; command?: string } = {};
-      
-      // Handle empty string - treat as no message
-      if (!message || message.trim() === '') {
-        requestBody = {}; // Send empty body (backend should handle this)
+      if (useCommandEndpoint) {
+        // Use command-specific endpoint for structured commands
+        requestUrl = `${this.baseUrl}/${this.chain}/${agentId}/${command}`;
       } else {
-        const isCliCommand = message.startsWith('/');
-        let commandName: string | undefined;
+        // Use base endpoint for chat/CLI format
+        requestUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
+      }
+      
+      // Build request body based on endpoint type
+      let requestBody: Record<string, any> = {};
+      
+      if (useCommandEndpoint) {
+        // Command-specific endpoint: Don't include 'command' field, only params
+        requestBody = { ...params };
+        // Include message if provided (for backward compatibility)
+        if (message && message.trim() !== '') {
+          requestBody.message = message;
+        }
+      } else {
+        // Base endpoint: Use existing logic for chat/CLI format
+        // Detect if message is a command without parameters
+        // Backend expects: { command: "ping" } for commands without params
+        // Backend expects: { message: "..." } for prompts or commands with params
         
-        // Try to parse as JSON to check if it's a JSON command
-        try {
-          const parsed = JSON.parse(message);
-          if (parsed.command) {
-            commandName = parsed.command;
-            // If JSON command has no params (only command field), send as { command: "ping" }
-            const hasParams = Object.keys(parsed).filter(k => k !== 'command').length > 0;
-            if (!hasParams) {
-              requestBody = { command: commandName };
+        // Handle empty string - treat as no message
+        if (!message || message.trim() === '') {
+          requestBody = {}; // Send empty body (backend should handle this)
+        } else {
+          const isCliCommand = message.startsWith('/');
+          let commandName: string | undefined;
+          
+          // Try to parse as JSON to check if it's a JSON command
+          try {
+            const parsed = JSON.parse(message);
+            if (parsed.command) {
+              commandName = parsed.command;
+              // If JSON command has no params (only command field), send as { command: "ping" }
+              const hasParams = Object.keys(parsed).filter(k => k !== 'command').length > 0;
+              if (!hasParams) {
+                requestBody = { command: commandName };
+              } else {
+                // JSON command with params - send as message (backend will parse it)
+                requestBody = { message };
+              }
             } else {
-              // JSON command with params - send as message (backend will parse it)
+              // JSON but not a command - send as message
               requestBody = { message };
             }
-          } else {
-            // JSON but not a command - send as message
-            requestBody = { message };
-          }
-        } catch {
-          // Not JSON - check if it's a CLI command
-          if (isCliCommand) {
-            // Extract command name (e.g., "/ping" -> "ping", "/ping arg" -> "ping")
-            commandName = message.substring(1).trim().split(/\s+/)[0];
-            // If CLI command has no params (just "/ping"), send as { command: "ping" }
-            const parts = message.substring(1).trim().split(/\s+/);
-            const hasParams = parts.length > 1;
-            if (!hasParams && commandName) {
-              requestBody = { command: commandName };
+          } catch {
+            // Not JSON - check if it's a CLI command
+            if (isCliCommand) {
+              // Extract command name (e.g., "/ping" -> "ping", "/ping arg" -> "ping")
+              commandName = message.substring(1).trim().split(/\s+/)[0];
+              // If CLI command has no params (just "/ping"), send as { command: "ping" }
+              const parts = message.substring(1).trim().split(/\s+/);
+              const hasParams = parts.length > 1;
+              if (!hasParams && commandName) {
+                requestBody = { command: commandName };
+              } else {
+                // CLI command with params - send as message
+                requestBody = { message };
+              }
             } else {
-              // CLI command with params - send as message
+              // Natural language prompt - send as message
               requestBody = { message };
             }
-          } else {
-            // Natural language prompt - send as message
-            requestBody = { message };
           }
         }
       }
@@ -184,10 +214,19 @@ export class AgentsApiClient {
       console.log(`   📋 Base URL: ${this.baseUrl}`);
       console.log(`   🔗 Chain: ${this.chain}`);
       console.log(`   👤 Agent ID: ${agentId}`);
-      console.log(`   🔗 Final Request URL: ${requestUrl}`);
+      if (useCommandEndpoint) {
+        console.log(`   🎯 Command: ${command}`);
+        console.log(`   🔗 Endpoint Type: Command-specific`);
+        console.log(`   🔗 Final Request URL: ${requestUrl}`);
+      } else {
+        console.log(`   🔗 Endpoint Type: Base (chat)`);
+        console.log(`   🔗 Final Request URL: ${requestUrl}`);
+      }
       console.log(`\n   📦 Request Payload:`);
       console.log(`   ${JSON.stringify(requestBody, null, 2).split('\n').join('\n   ')}`);
-      if (requestBody.command) {
+      if (useCommandEndpoint) {
+        console.log(`   ✅ Using command-specific endpoint (no 'command' field in body)`);
+      } else if (requestBody.command) {
         console.log(`   ✅ Using 'command' field (no 'message' field)`);
       } else if (requestBody.message) {
         console.log(`   ✅ Using 'message' field`);
@@ -419,8 +458,7 @@ export class AgentsApiClient {
 
         // Step 5: Retry request with X-PAYMENT header using resource URL from 402 response
         // Per x402 spec: "Use the resource URL from the 402 response for the paid request"
-        // If resource is provided, use it (may be absolute or relative)
-        // Fix double /x402 prefix if present (backend may return incorrect resource URL)
+        // However, if we used a command-specific endpoint, preserve it (backend may return base endpoint)
         let resourceUrl: string;
         if (acceptDetails.resource) {
           let resource = acceptDetails.resource;
@@ -433,40 +471,90 @@ export class AgentsApiClient {
             }
           }
           
-          // If resource is absolute URL, use it (after fixing double prefix)
-          if (resource.startsWith('http://') || resource.startsWith('https://')) {
-            resourceUrl = resource;
+          // If we used a command-specific endpoint, preserve it even if backend returns base endpoint
+          // This ensures we retry to the correct command-specific endpoint
+          if (useCommandEndpoint && command) {
+            // Extract the command-specific path - include /x402 prefix
+            const commandPath = `/x402/${this.chain}/${agentId}/${command}`;
+            
+            // If resource is absolute URL, replace the path with command-specific path
+            if (resource.startsWith('http://') || resource.startsWith('https://')) {
+              const url = new URL(resource);
+              // Preserve protocol and host, use command-specific path
+              resourceUrl = `${url.protocol}//${url.host}${commandPath}`;
+              // Always log endpoint preservation (critical for debugging)
+              console.log(`   🔧 Preserving command-specific endpoint: ${resourceUrl}`);
+            } else {
+              // Relative path - construct command-specific endpoint using baseUrl
+              resourceUrl = `${this.baseUrl}/${this.chain}/${agentId}/${command}`;
+              // Always log endpoint preservation (critical for debugging)
+              console.log(`   🔧 Preserving command-specific endpoint: ${resourceUrl}`);
+            }
           } else {
-            // Relative path - handle /x402 prefix if present
-            let resourcePath = resource;
-            // If resource path starts with /x402, remove it since baseUrl already includes /x402
-            if (resourcePath.startsWith('/x402/')) {
-              resourcePath = resourcePath.substring(6); // Remove '/x402'
-            } else if (resourcePath.startsWith('/x402')) {
-              resourcePath = resourcePath.substring(5); // Remove '/x402'
+            // Not using command-specific endpoint - use resource as-is
+            if (resource.startsWith('http://') || resource.startsWith('https://')) {
+              resourceUrl = resource;
+            } else {
+              // Relative path - handle /x402 prefix if present
+              let resourcePath = resource;
+              // If resource path starts with /x402, remove it since baseUrl already includes /x402
+              if (resourcePath.startsWith('/x402/')) {
+                resourcePath = resourcePath.substring(6); // Remove '/x402'
+              } else if (resourcePath.startsWith('/x402')) {
+                resourcePath = resourcePath.substring(5); // Remove '/x402'
+              }
+              // Ensure path starts with /
+              if (!resourcePath.startsWith('/')) {
+                resourcePath = '/' + resourcePath;
+              }
+              resourceUrl = `${this.baseUrl}${resourcePath}`;
             }
-            // Ensure path starts with /
-            if (!resourcePath.startsWith('/')) {
-              resourcePath = '/' + resourcePath;
-            }
-            resourceUrl = `${this.baseUrl}${resourcePath}`;
           }
         } else {
-          // Fallback: construct from baseUrl (which already includes /x402)
-          resourceUrl = `${this.baseUrl}/${this.chain}/${agentId}`;
+          // Fallback: use the same URL we used for the initial request
+          // This preserves command-specific endpoint if we used one
+          resourceUrl = requestUrl;
         }
         
-        if (this.verbose) {
-          console.log('   🔄 Step 3: Retrying request with payment');
-          console.log(`      Resource URL: ${resourceUrl}`);
-          if (acceptDetails.resource) {
-            console.log(`      Original resource from 402: ${acceptDetails.resource}`);
+        // Always log retry URL (critical for debugging endpoint issues)
+        console.log('   🔄 Step 3: Retrying request with payment');
+        console.log(`      Resource URL: ${resourceUrl}`);
+        if (acceptDetails.resource && this.verbose) {
+          console.log(`      Original resource from 402: ${acceptDetails.resource}`);
+        }
+        
+        // Build retry request body - use same format as initial request
+        // IMPORTANT: Use the exact same construction as the initial request to ensure consistency
+        let retryBody: Record<string, any>;
+        if (useCommandEndpoint && params) {
+          // Command-specific endpoint: Use params (no command field)
+          // Use the same construction as initial request to ensure arrays are preserved
+          retryBody = { ...params };
+          // Include message if provided (for backward compatibility) - same as initial request
+          if (message && message.trim() !== '') {
+            retryBody.message = message;
+          }
+        } else {
+          // Base endpoint: Use message
+          retryBody = { message };
+        }
+        
+        // Log retry body for debugging (always log to help diagnose webhook issues)
+        console.log(`   📦 Retry Request Payload:`);
+        console.log(`   ${JSON.stringify(retryBody, null, 2).split('\n').join('\n   ')}`);
+        // Also log array types to verify they're preserved correctly
+        if (retryBody.qualityModifiers !== undefined) {
+          const isArray = Array.isArray(retryBody.qualityModifiers);
+          const allStrings = isArray && retryBody.qualityModifiers.every((item: any) => typeof item === 'string');
+          console.log(`   🔍 qualityModifiers validation: Array.isArray=${isArray}, allStrings=${allStrings}, value=${JSON.stringify(retryBody.qualityModifiers)}`);
+          if (!isArray || !allStrings) {
+            console.error(`   ⚠️  WARNING: qualityModifiers is not an array of strings! This may cause webhook validation errors.`);
           }
         }
         
         response = await axios.post(
           resourceUrl,
-          { message },
+          retryBody,
           {
             headers: {
               "Content-Type": "application/json",
@@ -618,10 +706,37 @@ export class AgentsApiClient {
         }
 
         if (data?.error) {
+          // Include more context for 500 errors to help debug backend issues
+          if (status === 500) {
+            const errorDetails = typeof data === 'string' 
+              ? data 
+              : JSON.stringify(data, null, 2);
+            if (this.verbose) {
+              console.error(`   ❌ Backend Error Response (${status}):`);
+              console.error(`   ${errorDetails}`);
+              const failedRequest = useCommandEndpoint && params ? { ...params } : { message };
+              console.error(`   📦 Request that failed: ${JSON.stringify(failedRequest, null, 2)}`);
+            }
+            throw new Error(`Internal server error: ${data.error || errorDetails}`);
+          }
           throw new Error(data.error);
         }
 
-        throw new Error(`API error (${status}): ${JSON.stringify(data)}`);
+        // Log full response for debugging
+        const errorDetails = typeof data === 'string' 
+          ? data 
+          : JSON.stringify(data, null, 2);
+        
+        if (this.verbose) {
+          console.error(`   ❌ Backend Error Response (${status}):`);
+          console.error(`   ${errorDetails}`);
+          if (status === 500) {
+            const failedRequest = useCommandEndpoint && params ? { ...params } : { message };
+            console.error(`   📦 Request that failed: ${JSON.stringify(failedRequest, null, 2)}`);
+          }
+        }
+        
+        throw new Error(`API error (${status}): ${errorDetails}`);
       }
 
       throw error;

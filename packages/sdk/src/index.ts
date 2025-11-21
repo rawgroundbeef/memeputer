@@ -148,7 +148,7 @@ export class Memeputer {
     }
     
     // Commands that expect JSON payloads (not CLI format) - only for commands that need JSON even with simple params
-    const jsonPayloadCommands = ['describe_image', 'generate_captions', 'post_telegram', 'discover_trends', 'enhance_prompt', 'extract_keywords'];
+    const jsonPayloadCommands = ['describe_image', 'generate_captions', 'post_telegram', 'discover_trends', 'enhance_prompt', 'keywords', 'select_best_trend'];
     const needsJsonPayload = jsonPayloadCommands.includes(cmd);
     
     // Check if params contain complex objects (not just primitives)
@@ -156,14 +156,18 @@ export class Memeputer {
       value => typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean' && value !== null
     );
     
-    // If command needs JSON or params are complex, send as JSON via prompt()
+    // If command needs JSON or params are complex, use command-specific endpoint
     if (needsJsonPayload || hasComplexParams) {
-      const message = JSON.stringify({ command: cmd, ...(paramsObj || {}) });
+      // Use command-specific endpoint for structured commands
+      // Don't include command in message - it's in the URL
+      const message = ''; // Empty message for command-specific endpoint
       return this.apiClient.interact(
         agentId,
         message,
         this.wallet!,
         this.connection!,
+        cmd, // Pass command name for command-specific endpoint
+        paramsObj, // Pass structured params
       );
     }
     

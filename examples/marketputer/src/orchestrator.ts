@@ -75,7 +75,7 @@ export class Orchestrator {
       // Step 3: Select Best Trend
       let selectedTrend: any = null;
       if (trends?.items && trends.items.length > 0) {
-        this.logger.section('Step 3: Select Best Trend', 'briefputer');
+        this.logger.section('Step 3: Select Best Trend', 'trendputer');
         this.logger.startLoading('Processing...');
         selectedTrend = await this.selectBestTrend(trends.items, fixedTask);
         this.logger.stopLoading();
@@ -104,13 +104,19 @@ export class Orchestrator {
       // Step 6: Generate Image
       const { imageUrl, imageHash, imageStatusUrl } = await this.generateImage(imagePrompt, brandProfile);
 
+      // Wait for image to be ready before proceeding
+      let readyImageUrl = imageUrl;
+      if (imageStatusUrl || imageUrl) {
+        readyImageUrl = await this.waitForImageReady(imageUrl, imageStatusUrl);
+      }
+
       // Step 7: Describe Image
       let imageDescription: string | null = null;
       let imageDescriptionData: any = null;
-      if (!imageUrl) {
-        this.logger.warn('Skipping image description - no image was generated');
+      if (!readyImageUrl) {
+        this.logger.warn('Skipping image description - no image was generated or image not ready');
       } else {
-        const descriptionResult = await this.describeImage(imageUrl);
+        const descriptionResult = await this.describeImage(readyImageUrl);
         imageDescription = descriptionResult.description;
         imageDescriptionData = descriptionResult.data;
       }
@@ -283,7 +289,7 @@ export class Orchestrator {
     
     try {
       const parsed = JSON.parse(briefResult.response);
-      const brief = parsed.data || parsed;
+      const brief = parsed.data;
       this.logger.result('✅', 'Got creative brief');
       
       if (brief?.brief) {
@@ -337,8 +343,8 @@ export class Orchestrator {
     if (!imageUrl) {
       try {
         const parsed = JSON.parse(imageResult.response);
-        imageUrl = parsed.imageUrl || parsed.image_url || parsed.data?.imageUrl || null;
-        imageHash = parsed.imageHash || parsed.image_hash || parsed.data?.imageHash || null;
+        imageUrl = parsed.data?.imageUrl || null;
+        imageHash = parsed.data?.imageHash || null;
       } catch {
         if (imageResult.response.startsWith('http')) {
           imageUrl = imageResult.response.trim();
@@ -374,6 +380,81 @@ export class Orchestrator {
   }
 
   /**
+   * Wait for image to be ready by polling statusUrl or checking if imageUrl is accessible
+   */
+  private async waitForImageReady(imageUrl: string | null, statusUrl: string | null): Promise<string | null> {
+    if (!imageUrl && !statusUrl) {
+      return null;
+    }
+
+    // If we have a statusUrl, poll it until image is ready
+    if (statusUrl) {
+      this.logger.info('Waiting for image to be ready (polling status URL)...');
+      const statusResult = await this.memeputer.pollStatus(statusUrl, {
+        maxAttempts: 120,
+        intervalMs: 1000,
+        onProgress: (attempt, status) => {
+          const elapsedSeconds = attempt - 1;
+          if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
+            this.logger.info(`   ⏳ Still waiting for image... (${elapsedSeconds}s elapsed, status: ${status.status})`);
+          }
+        },
+      });
+
+      if (statusResult.status === 'completed') {
+        const readyUrl = statusResult.imageUrl || statusResult.mediaUrl || imageUrl;
+        if (readyUrl) {
+          this.logger.result('✅', 'Image is ready');
+          return readyUrl;
+        }
+      } else if (statusResult.status === 'failed') {
+        this.logger.error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
+        return null;
+      }
+    }
+
+    // If no statusUrl or statusUrl didn't return imageUrl, check if imageUrl is accessible
+    if (imageUrl) {
+      this.logger.info('Checking if image URL is accessible...');
+      const axios = (await import('axios')).default;
+      const maxAttempts = 30; // 30 seconds max
+      const delayMs = 1000;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const response = await axios.head(imageUrl, {
+            validateStatus: (status) => status < 500, // Don't throw on 4xx
+            timeout: 5000,
+          });
+
+          if (response.status === 200) {
+            this.logger.result('✅', 'Image URL is accessible');
+            return imageUrl;
+          }
+
+          // If 404, wait and retry
+          if (response.status === 404) {
+            if (attempt < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
+            }
+          }
+        } catch (error) {
+          // Network error or timeout - wait and retry
+          if (attempt < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+        }
+      }
+
+      this.logger.warn('Image URL not accessible after waiting');
+    }
+
+    return imageUrl; // Return original URL even if not accessible (let describe_image handle it)
+  }
+
+  /**
    * Step 7: Describe image using ImageDescripterputer
    */
   private async describeImage(imageUrl: string): Promise<{ description: string | null; data: any }> {
@@ -394,55 +475,68 @@ export class Orchestrator {
       if (!statusUrl) {
         try {
           const parsed = JSON.parse(descriptionResult.response);
-          statusUrl = parsed.statusUrl || parsed.data?.statusUrl || null;
+          statusUrl = parsed.data?.statusUrl || null;
         } catch {
           // Response might not be JSON yet
         }
       }
       
       if (statusUrl) {
-        let pollingUrl = statusUrl;
-        const statusUrlMatch = statusUrl.match(/http:\/\/localhost:(\d+)/);
-        const apiBaseMatch = this.apiBase.match(/http:\/\/localhost:(\d+)/);
-        
-        if (statusUrlMatch && apiBaseMatch) {
-          if (statusUrlMatch[1] === apiBaseMatch[1]) {
-            pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
-          }
-        } else if (statusUrlMatch && !this.apiBase.includes('localhost')) {
-          pollingUrl = statusUrl.replace(/http:\/\/localhost:\d+/, this.apiBase);
-        }
-        
-        this.logger.info('Image description in progress...');
-        const polledResult = await this.pollImageDescription(pollingUrl);
-        
-        if (polledResult) {
-          try {
-            const finalParsed = typeof polledResult === 'string' 
-              ? JSON.parse(polledResult)
-              : polledResult;
-            const description = finalParsed.description || finalParsed.data?.description || null;
-            
-            if (description) {
-              this.logger.result('✅', 'Got image description');
-              const preview = description.substring(0, 120);
-              this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+        // Use SDK's pollStatus method for proper async handling
+        this.logger.info('Image description in progress (async operation)...');
+        const statusResult = await this.memeputer.pollStatus(statusUrl, {
+          maxAttempts: 120,
+          intervalMs: 1000,
+          onProgress: (attempt, status) => {
+            const elapsedSeconds = attempt - 1;
+            if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
+              this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed, status: ${status.status})`);
             }
-            return { description, data: finalParsed };
-          } catch {
-            const description = typeof polledResult === 'string' ? polledResult : null;
-            if (description) {
-              this.logger.result('✅', 'Got image description');
-              const preview = description.substring(0, 120);
-              this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+          },
+        });
+        
+        if (statusResult.status === 'completed') {
+          // Extract description from status result
+          let description: string | null = null;
+          let data: any = null;
+          
+          // Try to parse response if it's a string
+          if (statusResult.message) {
+            try {
+              const parsed = JSON.parse(statusResult.message);
+              description = parsed.description || parsed.data?.description || statusResult.message;
+              data = parsed;
+            } catch {
+              description = statusResult.message;
+              data = { description };
             }
-            return { description, data: { description } };
           }
+          
+          // Also check imageUrl/mediaUrl in case description is there
+          if (!description && (statusResult.imageUrl || statusResult.mediaUrl)) {
+            // If we got a URL, might need to fetch it or it might be the description
+            description = statusResult.imageUrl || statusResult.mediaUrl || null;
+          }
+          
+          if (description) {
+            this.logger.result('✅', 'Got image description');
+            const preview = description.substring(0, 120);
+            this.logger.info(`   ${preview}${description.length > 120 ? '...' : ''}`);
+          } else {
+            this.logger.warn('Status completed but no description found');
+          }
+          
+          return { description, data: data || { description } };
+        } else if (statusResult.status === 'failed') {
+          throw new Error(`Image description failed: ${statusResult.error || 'Unknown error'}`);
+        } else {
+          this.logger.warn(`Unexpected status: ${statusResult.status}`);
+          return { description: null, data: null };
         }
       } else {
         try {
           const parsed = JSON.parse(descriptionResult.response);
-          const description = parsed.description || parsed.data?.description || null;
+          const description = parsed.data?.description || null;
           
           if (description) {
             this.logger.result('✅', 'Got image description');
@@ -467,8 +561,6 @@ export class Orchestrator {
       this.logger.error(`Failed to describe image: ${errorMessage}`);
       return { description: null, data: null };
     }
-    
-    return { description: null, data: null };
   }
 
   /**
@@ -514,7 +606,7 @@ export class Orchestrator {
       
       try {
         const parsed = JSON.parse(captionResult.response);
-        const captions = parsed.captions || parsed.data?.captions || [];
+        const captions = parsed.data?.captions || [];
         
         this.logger.info(`CaptionPuter response structure: ${JSON.stringify(Object.keys(parsed))}`);
         this.logger.info(`Found ${captions.length} caption(s) in response`);
@@ -607,7 +699,7 @@ export class Orchestrator {
         }
         
         const parsed = JSON.parse(responseText);
-        const messageLink = parsed.messageLink || parsed.data?.messageLink || null;
+        const messageLink = parsed.data?.messageLink || null;
         
         if (messageLink && typeof messageLink === 'string') {
           this.logger.result('✅', `Posted to Telegram: ${messageLink}`);
@@ -890,8 +982,8 @@ export class Orchestrator {
 
   /**
    * Step 3: Select Best Trend
-   * Uses Briefputer to evaluate trends and select the highest quality option
-   * Makes autonomous decisions based on relevance and quality
+   * Uses Trendputer to evaluate trends and select the highest quality option
+   * Uses the structured select_best_trend command for reliable JSON parsing
    */
   private async selectBestTrend(trends: any[], task: string): Promise<any | null> {
     if (!trends || trends.length === 0) {
@@ -902,76 +994,82 @@ export class Orchestrator {
     if (trends.length === 1) {
       return trends[0];
     }
+
+    // Extract trend titles for simple format (backend expects trendTitles or trends)
+    const trendTitles = trends.map(t => t.title || t.name || String(t)).filter(Boolean);
     
-    // The orchestrator agent hires BriefPuter to evaluate trends
-    // BriefPuter is designed for content evaluation and creative reasoning
-    // This demonstrates agent-to-agent collaboration for decision-making
-    const trendsList = trends.map((t, idx) => 
-      `${idx + 1}. "${t.title || 'Untitled'}": ${(t.summary || '').substring(0, 100)}${(t.summary || '').length > 100 ? '...' : ''}`
-    ).join('\n');
-    
-    const evaluationPrompt = `I need to evaluate ${trends.length} trending topics and pick the best one for this task: "${task}"
+    const commandParams = {
+      trendTitles: trendTitles, // Simple format - array of strings
+      trends: trends, // Full objects format (takes precedence if backend supports it)
+      task: task,
+      criteria: ['relevance', 'quality', 'engagement'],
+      returnFormat: 'index' as const,
+      includeReasoning: true,
+    };
 
-Here are the trends:
-${trendsList}
-
-Please evaluate these trends and tell me which ONE is the best fit. Consider:
-- Relevance to the task
-- Quality and credibility  
-- Potential for engaging content
-
-Respond with ONLY the number (1-${trends.length}) of the best trend. If none are suitable, respond with "0".`;
+    // Log input parameters
+    console.log('\n   📋 Trendputer Command Input:');
+    console.log(`   Task: "${task}"`);
+    console.log(`   Trends: ${trends.length} trends to evaluate`);
+    trends.forEach((trend, idx) => {
+      console.log(`   ${idx + 1}. "${trend.title || 'Untitled'}" (score: ${trend.score || 'N/A'})`);
+    });
+    console.log(`   Criteria: ${commandParams.criteria.join(', ')}`);
+    console.log('');
 
     try {
-      // Step 3: Select Best Trend - Uses Briefputer to evaluate trends and select highest quality option
-      const evaluationResult = await this.memeputer.prompt(
-        'briefputer',
-        evaluationPrompt
-      );
-      
-      // Track this payment - use actual cost from receipt
-      if (evaluationResult.transactionSignature) {
-        const actualAmount = evaluationResult.x402Receipt?.amountPaidUsdc || 0.01;
-        const paymentAmount = evaluationResult.x402Quote?.amountQuotedUsdc || actualAmount;
-        this.totalSpent += actualAmount;
-        this.agentsHired.push('briefputer');
-        this.payments.push({
-          agentId: 'briefputer',
-          command: 'trend-evaluation',
-          amount: actualAmount,
-          txId: evaluationResult.transactionSignature,
-        });
-        
-        // Log payment
-        const payer = evaluationResult.x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = evaluationResult.x402Receipt?.merchant || evaluationResult.x402Receipt?.payTo || '';
-        
-        this.logger.payment({
-          agentId: 'briefputer',
-          amount: paymentAmount,
-          transactionSignature: evaluationResult.transactionSignature,
-          txUrl: getTxUrl(evaluationResult.transactionSignature, this.network),
-          fromWallet: payer,
-          fromWalletUrl: getAccountUrl(payer, this.network),
-          toWallet: merchant,
-          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: evaluationResult.x402Receipt?.amountPaidUsdc,
-        });
+      // Step 3: Select Best Trend - Uses Trendputer command to evaluate trends and select highest quality option
+      const result = await this.hireAgentWithCommand('trendputer', 'select_best_trend', commandParams);
+
+      // Log the raw command result for debugging
+      console.log('\n   📋 Trendputer Command Result:');
+      console.log(`   Response length: ${result.response?.length || 0} characters`);
+      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
+      if (result.response) {
+        try {
+          const preview = JSON.parse(result.response);
+          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+            hasData: !!preview.data,
+            selectedIndex: preview.data?.selectedIndex,
+            hasSelectedTrend: !!preview.data?.selectedTrend,
+            hasReasoning: !!preview.data?.reasoning
+          }, null, 2));
+        } catch {
+          console.log(`   ⚠️  Response is not valid JSON`);
+        }
       }
-      
-      // Parse the response to get the selected trend number
-      const response = evaluationResult.response.trim();
-      const selectedNumber = parseInt(response.match(/\d+/)?.[0] || '0');
-      
-      if (selectedNumber > 0 && selectedNumber <= trends.length) {
-        const selectedTrend = trends[selectedNumber - 1];
-        return selectedTrend;
-      } else {
-        return null;
+      console.log('');
+
+      // Parse response - guaranteed format: { "data": { selectedIndex: number, selectedTrend?: {...}, reasoning?: string } }
+      // Handle potential double-wrapping: { "data": { "data": { ... } } }
+      try {
+        const parsed = JSON.parse(result.response);
+        const data = parsed.data?.data || parsed.data; // Handle double-wrapping if present
+        const selectedIndex = data?.selectedIndex;
+        
+        if (selectedIndex !== undefined && selectedIndex >= 0 && selectedIndex < trends.length) {
+          const selectedTrend = trends[selectedIndex];
+          this.logger.result('✅', `Selected: "${selectedTrend.title || 'Untitled'}"`);
+          if (data?.reasoning) {
+            this.logger.info(`   Reasoning: ${data.reasoning}`);
+          }
+          return selectedTrend;
+        } else if (selectedIndex === -1 || selectedIndex === null) {
+          this.logger.warn('No suitable trend selected by Trendputer');
+          return null;
+        } else {
+          this.logger.error(`Invalid selectedIndex: ${selectedIndex} (expected 0-${trends.length - 1})`);
+          return null;
+        }
+      } catch (parseError) {
+        this.logger.error(`Failed to parse trend selection: ${parseError instanceof Error ? parseError.message : parseError}`);
+        // Fallback to heuristic-based selection if parsing fails
+        this.logger.warn('Falling back to heuristic selection');
+        return this.selectBestTrendHeuristic(trends, task);
       }
     } catch (error) {
       // Fallback to heuristic-based selection if AI evaluation fails
-      this.logger.warn('AI evaluation failed, using heuristic fallback');
+      this.logger.warn('Trend selection failed, using heuristic fallback');
       
       return this.selectBestTrendHeuristic(trends, task);
     }
@@ -1037,7 +1135,7 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
   /**
    * Step 1: Extract Keywords
    * Uses Keywordputer to extract relevant keywords from the task
-   * Uses the structured extract_keywords command for reliable JSON parsing
+   * Uses the structured keywords command for reliable JSON parsing
    */
   private async whatShouldIFocusOn(task: string): Promise<{
     focusArea: string;
@@ -1046,7 +1144,7 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
     reasoning: string;
   }> {
     const commandParams = {
-      task: task,
+      text: task,
       context: 'Creating content for Solana community',
       targetAudience: 'Solana degens',
       contentGoal: 'meme',
@@ -1063,7 +1161,7 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
 
     try {
       // Step 1: Extract Keywords using Keywordputer command
-      const result = await this.hireAgentWithCommand('keywordputer', 'extract_keywords', commandParams);
+      const result = await this.hireAgentWithCommand('keywordputer', 'keywords', commandParams);
 
       // Log the raw command result for debugging
       console.log('\n   📋 Keywordputer Command Result:');
@@ -1200,14 +1298,17 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
       // Parse JSON response - guaranteed to be valid JSON
       try {
         const parsed = JSON.parse(result.response);
-        const enhancedPrompt = parsed.enhancedPrompt || result.response;
+        // Handle nested structure: { data: { enhancedPrompt: "...", ... } }
+        const data = parsed.data || parsed;
+        const enhancedPrompt = data.enhancedPrompt || parsed.enhancedPrompt || result.response;
         this.logger.result('✅', 'Got enhanced prompt');
         
-        // Log the enhanced prompt output
+        // Log the enhanced prompt output (human-readable)
         console.log('   📝 Enhanced Prompt Output:');
         console.log(`   ${enhancedPrompt.substring(0, 200)}${enhancedPrompt.length > 200 ? '...' : ''}`);
-        if (parsed.modifiersApplied && parsed.modifiersApplied.length > 0) {
-          console.log(`   Modifiers Applied: ${parsed.modifiersApplied.join(', ')}`);
+        const modifiersApplied = data.modifiersApplied || parsed.modifiersApplied;
+        if (modifiersApplied && modifiersApplied.length > 0) {
+          console.log(`   Modifiers Applied: ${modifiersApplied.join(', ')}`);
         }
         console.log('');
         
@@ -1280,11 +1381,8 @@ Respond with ONLY the number (1-${trends.length}) of the best trend. If none are
       enhanced += `${brief.angle.substring(0, 200)}${brief.angle.length > 200 ? '...' : ''}\n\n`;
     }
     
-    // Add image prompt if available
-    if (prompt) {
-      enhanced += `🎨 <b>Image Prompt:</b>\n`;
-      enhanced += `<code>${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}</code>\n`;
-    }
+    // Note: Image prompt is intentionally omitted as it's too long and gets cut off
+    // The trend title above provides better context
     
     return enhanced;
   }

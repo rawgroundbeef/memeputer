@@ -1,6 +1,6 @@
-# Command Formats Testing Examples
+# Integration Test - Command Formats
 
-This example directory contains test scripts for different command format variations, specifically testing the `enhance_prompt` command with various input formats.
+Integration testing suite for command format parsing. Tests various input formats (CLI strings vs JSON) to ensure the backend correctly parses different command formats that users might input.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ These scripts test whether the backend can parse different CLI format strings th
 
 1. Install dependencies:
    ```bash
-   cd examples/command-formats
+   cd examples/integration-test-command-formats
    pnpm install
    ```
 

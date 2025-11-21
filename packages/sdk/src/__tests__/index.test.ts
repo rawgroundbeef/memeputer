@@ -173,15 +173,17 @@ describe('Memeputer SDK', () => {
         policy: { denyTerms: [] },
       });
 
-      // Should send as JSON string, not CLI format
+      // Should use command-specific endpoint (empty message, params passed separately)
       const callArgs = mockApiClient.interact.mock.calls[0];
       const message = callArgs[1];
+      const command = callArgs[4];
+      const params = callArgs[5];
       
-      expect(typeof message).toBe('string');
-      const parsed = JSON.parse(message);
-      expect(parsed.command).toBe('generate_brief');
-      expect(parsed.trendItem).toBeDefined();
-      expect(parsed.policy).toBeDefined();
+      expect(message).toBe(''); // Empty message for command-specific endpoint
+      expect(command).toBe('generate_brief');
+      expect(params).toBeDefined();
+      expect(params.trendItem).toBeDefined();
+      expect(params.policy).toBeDefined();
       expect(result.response).toBe('Brief generated');
     });
 
@@ -201,15 +203,17 @@ describe('Memeputer SDK', () => {
         detailLevel: 'detailed',
       });
 
-      // Should send as JSON string because describe_image is in jsonPayloadCommands
+      // Should use command-specific endpoint because describe_image is in jsonPayloadCommands
       const callArgs = mockApiClient.interact.mock.calls[0];
       const message = callArgs[1];
+      const command = callArgs[4];
+      const params = callArgs[5];
       
-      expect(typeof message).toBe('string');
-      const parsed = JSON.parse(message);
-      expect(parsed.command).toBe('describe_image');
-      expect(parsed.imageUrl).toBe('https://example.com/image.png');
-      expect(parsed.detailLevel).toBe('detailed');
+      expect(message).toBe(''); // Empty message for command-specific endpoint
+      expect(command).toBe('describe_image');
+      expect(params).toBeDefined();
+      expect(params.imageUrl).toBe('https://example.com/image.png');
+      expect(params.detailLevel).toBe('detailed');
       expect(result.response).toBe('Image described');
     });
 
