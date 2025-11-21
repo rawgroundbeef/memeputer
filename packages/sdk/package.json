@@ -1,6 +1,6 @@
 {
   "name": "@memeputer/sdk",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "SDK for interacting with Memeputer AI agents via x402 payments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

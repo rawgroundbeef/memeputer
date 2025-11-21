@@ -1,5 +1,23 @@
 # @memeputer/sdk
 
+## 1.7.0
+
+### Minor Changes
+
+- Improve error logging for debugging webhook issues
+  - Add detailed error logging for 500 errors with request payload details
+  - Log retry request payload to help diagnose webhook validation errors
+  - Add validation logging for array parameters (e.g., qualityModifiers)
+  - Improve error context in error messages
+
+- Enhance command-specific endpoint support
+  - Preserve command-specific endpoints in retry flow (fixes endpoint switching)
+  - Better handling of command-specific endpoints when backend returns base endpoint
+  - Add logging for endpoint preservation to aid debugging
+
+- Add more commands to jsonPayloadCommands list
+  - Add `keywords` and `select_best_trend` to jsonPayloadCommands for structured handling
+
 ## 1.6.0
 
 ### Minor Changes
