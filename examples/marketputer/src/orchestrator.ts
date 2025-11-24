@@ -322,18 +322,36 @@ export class Orchestrator {
   ): Promise<{ imageUrl: string | null; imageHash: string | null; imageStatusUrl: string | null }> {
     this.logger.section('Step 6: Generate Image', 'pfpputer');
     
-    // Use camelCase keys - SDK will convert to kebab-case flags automatically
-    const pfpParams: any = {
-      _args: ['generate', enhancedPrompt], // Positional arguments
-    };
-    
-    if (brandProfile?.referenceImageUrls && brandProfile.referenceImageUrls.length > 0) {
-      pfpParams.refImages = brandProfile.referenceImageUrls;
-      this.logger.info(`Using ${brandProfile.referenceImageUrls.length} reference image(s)`);
+    // Debug: Log brand profile to see what we're working with
+    this.logger.info(`Brand profile keys: ${Object.keys(brandProfile || {}).join(', ')}`);
+    this.logger.info(`Has reference_image_urls: ${!!brandProfile?.reference_image_urls}`);
+    if (brandProfile?.reference_image_urls) {
+      this.logger.info(`reference_image_urls count: ${brandProfile.reference_image_urls.length}`);
+      this.logger.info(`reference_image_urls: ${JSON.stringify(brandProfile.reference_image_urls)}`);
     }
     
-    const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp', pfpParams);
+    // Use pfp_with_reference if reference images are provided, otherwise use regular pfp
+    // Brand profile uses snake_case to match command parameter names
+    const imageUrls = brandProfile?.reference_image_urls;
     
+    if (imageUrls && imageUrls.length > 0) {
+      // Use pfp_with_reference command with structured parameters matching command structure
+      const pfpParams = {
+        reference_image_urls: imageUrls, // Array of reference image URLs (required)
+        prompt: enhancedPrompt, // Optional prompt
+      };
+      this.logger.info(`Using ${imageUrls.length} reference image(s) with pfp_with_reference`);
+      const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp_with_reference', pfpParams);
+      return this.processImageResult(imageResult);
+    } else {
+      // Fallback to regular pfp command without reference images
+      const pfpArgs = [enhancedPrompt];
+      const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp', pfpArgs);
+      return this.processImageResult(imageResult);
+    }
+  }
+
+  private async processImageResult(imageResult: PromptResult): Promise<{ imageUrl: string | null; imageHash: string | null; imageStatusUrl: string | null }> {
     let imageStatusUrl: string | null = null;
     if (imageResult.statusUrl) {
       imageStatusUrl = imageResult.statusUrl;
@@ -345,7 +363,7 @@ export class Orchestrator {
     if (!imageUrl) {
       try {
         const parsed = JSON.parse(imageResult.response);
-        imageUrl = parsed.data?.imageUrl || null;
+        imageUrl = parsed.data?.imageUrl || parsed.data?.images?.[0]?.image_url || null;
         imageHash = parsed.data?.imageHash || null;
       } catch {
         if (imageResult.response.startsWith('http')) {

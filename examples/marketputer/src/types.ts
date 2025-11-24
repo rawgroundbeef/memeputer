@@ -17,11 +17,11 @@ export const BrandProfileSchema = z.object({
   disclaimer: z.string().nullable().optional(),
   primaryColor: z.string().nullable().optional(),
   emojiPack: z.array(z.string()).optional(), // Not needed if brandAgentId provided
-  referenceImageUrls: z.array(z.string().url()).optional(), // Reference image URLs for PFPputer (must be publicly accessible)
+  reference_image_urls: z.array(z.string().url()).optional(), // Reference image URLs for PFPputer (snake_case, matches command structure)
   captionPuterOptions: z.object({
     promptTemplate: z.string().optional(), // Custom instructions for CaptionPuter prompt template
   }).optional(), // CaptionPuter-specific options
-}).refine(
+}).passthrough().refine(
   (data) => data.brandAgentId || (data.brandName && (data.voice || data.personality)),
   {
     message: "Either brandAgentId or both brandName and voice/personality must be provided",
