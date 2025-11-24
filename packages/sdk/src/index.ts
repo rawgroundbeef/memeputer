@@ -152,9 +152,21 @@ export class Memeputer {
     const needsJsonPayload = jsonPayloadCommands.includes(cmd);
     
     // Check if params contain complex objects (not just primitives)
-    const hasComplexParams = paramsObj && Object.values(paramsObj).some(
-      value => typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean' && value !== null
-    );
+    // Arrays of primitives are considered simple and can be converted to CLI format
+    const hasComplexParams = paramsObj && Object.values(paramsObj).some(value => {
+      if (value === null || value === undefined) return false;
+      if (Array.isArray(value)) {
+        // Arrays are simple if they only contain primitives
+        return value.some(item => 
+          typeof item !== 'string' && 
+          typeof item !== 'number' && 
+          typeof item !== 'boolean' && 
+          item !== null
+        );
+      }
+      // Non-array values are complex if they're not primitives
+      return typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean';
+    });
     
     // If command needs JSON or params are complex, use command-specific endpoint
     if (needsJsonPayload || hasComplexParams) {
@@ -180,7 +192,7 @@ export class Memeputer {
           cmdParams = params;
         } else {
           // Convert named params object to CLI format: --key value
-          cmdParams = Object.entries(params).flatMap(([key, value]) => [`--${key}`, String(value)]);
+          cmdParams = this.convertParamsToCliArgs(params);
         }
       }
     } else {
@@ -189,7 +201,7 @@ export class Memeputer {
           cmdParams = options.params;
         } else {
           // Convert named params object to CLI format: --key value
-          cmdParams = Object.entries(options.params).flatMap(([key, value]) => [`--${key}`, String(value)]);
+          cmdParams = this.convertParamsToCliArgs(options.params);
         }
       }
     }
@@ -205,6 +217,54 @@ export class Memeputer {
       this.wallet!,
       this.connection!,
     );
+  }
+
+  /**
+   * Helper to convert params object to CLI args array
+   * Handles camelCase to kebab-case conversion for keys
+   * Supports positional args via special '_args' or 'args' key
+   * 
+   * @example
+   * // Pure flags
+   * { refImages: ['url1', 'url2'] } -> ['--ref-images', 'url1 url2']
+   * 
+   * // Positional args + flags
+   * { _args: ['generate', 'prompt'], refImages: ['url1'] } -> ['generate', 'prompt', '--ref-images', 'url1']
+   */
+  private convertParamsToCliArgs(params: Record<string, any>): string[] {
+    const positionalArgs: string[] = [];
+    const flags: string[] = [];
+    
+    // Extract positional arguments if present
+    if ('_args' in params && Array.isArray(params._args)) {
+      positionalArgs.push(...params._args.map(String));
+    } else if ('args' in params && Array.isArray(params.args)) {
+      positionalArgs.push(...params.args.map(String));
+    }
+    
+    // Convert all other keys to flags
+    for (const [key, value] of Object.entries(params)) {
+      // Skip special keys used for positional args
+      if (key === '_args' || key === 'args') {
+        continue;
+      }
+      
+      // Convert camelCase to kebab-case for CLI flags
+      // e.g. refImages -> --ref-images
+      const kebabKey = key.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+      const flag = `--${kebabKey}`;
+      
+      // Handle array values - spread them as separate arguments after the flag
+      // e.g. { refImages: ['url1', 'url2'] } -> ['--ref-images', 'url1', 'url2']
+      if (Array.isArray(value)) {
+        flags.push(flag, ...value.map(String));
+      } else {
+        flags.push(flag, String(value));
+      }
+    }
+    
+    // Combine: positional args first, then flags
+    return [...positionalArgs, ...flags];
   }
 
   /**
@@ -268,4 +328,3 @@ export { autoDetectBaseWallet, BaseWallet } from "./utils";
 const memeputer = new Memeputer();
 
 export default memeputer;
-

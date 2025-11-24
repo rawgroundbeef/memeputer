@@ -241,6 +241,134 @@ describe('Memeputer SDK', () => {
       );
       expect(result.response).toBe('pong');
     });
+
+    describe('camelCase to kebab-case conversion', () => {
+      it('should convert camelCase keys to kebab-case flags', async () => {
+        const mockResponse = {
+          response: 'Success',
+          success: true,
+          format: 'text',
+          agentId: 'pfpputer',
+          transactionSignature: 'test-tx',
+        };
+
+        mockApiClient.interact.mockResolvedValue(mockResponse);
+
+        const result = await memeputer.command('pfpputer', 'pfp', {
+          refImages: ['url1', 'url2'],
+          maxWidth: 1024,
+        });
+
+        expect(mockApiClient.interact).toHaveBeenCalledWith(
+          'pfpputer',
+          '/pfp --ref-images url1 url2 --max-width 1024',
+          mockWallet,
+          mockConnection,
+        );
+        expect(result.response).toBe('Success');
+      });
+
+      it('should handle positional args with _args key', async () => {
+        const mockResponse = {
+          response: 'Success',
+          success: true,
+          format: 'text',
+          agentId: 'pfpputer',
+          transactionSignature: 'test-tx',
+        };
+
+        mockApiClient.interact.mockResolvedValue(mockResponse);
+
+        const result = await memeputer.command('pfpputer', 'pfp', {
+          _args: ['generate', 'a cat'],
+          refImages: ['url1', 'url2'],
+        });
+
+        expect(mockApiClient.interact).toHaveBeenCalledWith(
+          'pfpputer',
+          '/pfp generate a cat --ref-images url1 url2',
+          mockWallet,
+          mockConnection,
+        );
+        expect(result.response).toBe('Success');
+      });
+
+      it('should handle positional args with args key (alternative)', async () => {
+        const mockResponse = {
+          response: 'Success',
+          success: true,
+          format: 'text',
+          agentId: 'pfpputer',
+          transactionSignature: 'test-tx',
+        };
+
+        mockApiClient.interact.mockResolvedValue(mockResponse);
+
+        const result = await memeputer.command('pfpputer', 'pfp', {
+          args: ['generate', 'a cat'],
+          refImages: ['url1'],
+        });
+
+        expect(mockApiClient.interact).toHaveBeenCalledWith(
+          'pfpputer',
+          '/pfp generate a cat --ref-images url1',
+          mockWallet,
+          mockConnection,
+        );
+        expect(result.response).toBe('Success');
+      });
+
+      it('should handle single value flags (not arrays)', async () => {
+        const mockResponse = {
+          response: 'Success',
+          success: true,
+          format: 'text',
+          agentId: 'pfpputer',
+          transactionSignature: 'test-tx',
+        };
+
+        mockApiClient.interact.mockResolvedValue(mockResponse);
+
+        const result = await memeputer.command('pfpputer', 'pfp', {
+          style: 'anime',
+          maxWidth: 1024,
+        });
+
+        expect(mockApiClient.interact).toHaveBeenCalledWith(
+          'pfpputer',
+          '/pfp --style anime --max-width 1024',
+          mockWallet,
+          mockConnection,
+        );
+        expect(result.response).toBe('Success');
+      });
+
+      it('should handle complex camelCase conversions', async () => {
+        const mockResponse = {
+          response: 'Success',
+          success: true,
+          format: 'text',
+          agentId: 'test-agent',
+          transactionSignature: 'test-tx',
+        };
+
+        mockApiClient.interact.mockResolvedValue(mockResponse);
+
+        const result = await memeputer.command('test-agent', 'test', {
+          camelCaseKey: 'value',
+          multiWordKeyName: 'value2',
+          single: 'value3',
+        });
+
+        expect(mockApiClient.interact).toHaveBeenCalledWith(
+          'test-agent',
+          '/test --camel-case-key value --multi-word-key-name value2 --single value3',
+          mockWallet,
+          mockConnection,
+        );
+        expect(result.response).toBe('Success');
+      });
+    });
   });
 });
 

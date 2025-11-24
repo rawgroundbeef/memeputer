@@ -322,13 +322,17 @@ export class Orchestrator {
   ): Promise<{ imageUrl: string | null; imageHash: string | null; imageStatusUrl: string | null }> {
     this.logger.section('Step 6: Generate Image', 'pfpputer');
     
-    let pfpCommand = `/pfp generate ${enhancedPrompt}`;
+    // Use camelCase keys - SDK will convert to kebab-case flags automatically
+    const pfpParams: any = {
+      _args: ['generate', enhancedPrompt], // Positional arguments
+    };
+    
     if (brandProfile?.referenceImageUrls && brandProfile.referenceImageUrls.length > 0) {
-      pfpCommand += ` --ref-images ${brandProfile.referenceImageUrls.join(' ')}`;
+      pfpParams.refImages = brandProfile.referenceImageUrls;
       this.logger.info(`Using ${brandProfile.referenceImageUrls.length} reference image(s)`);
     }
     
-    const imageResult = await this.hireAgentWithPrompt('pfpputer', pfpCommand);
+    const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp', pfpParams);
     
     let imageStatusUrl: string | null = null;
     if (imageResult.statusUrl) {
