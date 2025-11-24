@@ -328,9 +328,7 @@ export class Orchestrator {
       this.logger.info(`Using ${brandProfile.referenceImageUrls.length} reference image(s)`);
     }
     
-    const imageResult = await this.hireAgentWithCommand('pfpputer', 'pfp', {
-      message: pfpCommand,
-    });
+    const imageResult = await this.hireAgentWithPrompt('pfpputer', pfpCommand);
     
     let imageStatusUrl: string | null = null;
     if (imageResult.statusUrl) {
