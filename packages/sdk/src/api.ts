@@ -26,28 +26,39 @@ export interface X402Receipt {
 export interface InteractionResult {
   success: boolean;
   response: string;
-  format: "text" | "image" | "video" | "audio";
+  format: "text" | "json" | "markdown"; // Standardized format field
   mediaUrl?: string;
-  statusUrl?: string; // For async operations
+  statusUrl?: string; // For async operations (HTTP 202)
   imageUrl?: string; // Async image result
   etaSeconds?: number; // Estimated time for async operations
+  retryAfterSeconds?: number; // Polling interval in seconds (default: 2)
   transactionSignature?: string;
-  agentId?: string;
+  agentId?: string; // Logical agent name (e.g., "pfpputer", "trendputer")
+  agentUuid?: string; // Internal UUID (optional, for debugging/tracking)
+  timestamp?: string; // ISO 8601 timestamp - server response time
+  x402Version?: number; // Always 1 for standardized responses
   error?: string;
-  x402Receipt?: X402Receipt; // Actual payment details from x402 response
+  code?: string; // Machine-readable error code
+  receipt?: X402Receipt; // Standardized receipt field (preferred)
+  x402Receipt?: X402Receipt; // Legacy field name (for backward compatibility)
   x402Quote?: {
     amountQuotedUsdc: number; // Amount quoted in 402 response (what we paid)
     amountQuotedMicroUsdc: number;
     maxAmountRequired: number;
   }; // Quote details from 402 response
+  jobId?: string; // For async operations (HTTP 202)
 }
 
 export interface StatusCheckResult {
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "pending" | "processing" | "completed" | "failed"; // Legacy field
+  state?: "processing" | "succeeded" | "failed"; // Standardized state field
   message?: string;
+  response?: string; // Final result content
+  artifactUrl?: string; // URL to final artifact
   imageUrl?: string;
   mediaUrl?: string;
   error?: string;
+  code?: string; // Machine-readable error code (e.g., "generation_timeout", "generation_failed")
 }
 
 export class AgentsApiClient {
@@ -582,53 +593,54 @@ export class AgentsApiClient {
       
       const data = response.data;
 
+      // Log raw JSON response from API (standardized format)
+      if (this.verbose) {
+        console.log('\n   📦 Raw API Response (JSON):');
+        console.log(`   ${JSON.stringify(data, null, 2).split('\n').join('\n   ')}`);
+        console.log('');
+      }
+
+      // Handle HTTP 202 (async job started)
+      if (response.status === 202) {
+        // Async response - return job details
+        const receipt = data.receipt || data.x402Receipt;
+        const parsedReceipt = receipt ? await this.parseReceipt(receipt, paymentWallet || wallet, recipient, amountUsdc, amountMicroUsdc, paymentHeader, normalizedNetwork, computedTxHash) : undefined;
+        
+        const asyncResponse = {
+          success: data.success !== false, // Default to true for 202
+          response: data.response || "Job started",
+          format: (data.format || "text") as "text" | "json" | "markdown",
+          statusUrl: data.statusUrl,
+          jobId: data.jobId,
+          etaSeconds: data.etaSeconds,
+          retryAfterSeconds: data.retryAfterSeconds, // Polling interval (default: 2s)
+          agentId: data.agentId || agentId,
+          agentUuid: data.agentUuid, // Internal UUID (optional)
+          timestamp: data.timestamp, // Server response time
+          x402Version: data.x402Version,
+          receipt: parsedReceipt,
+          x402Receipt: parsedReceipt, // Backward compatibility
+        };
+        
+        // Log async response structure
+        if (this.verbose) {
+          console.log('   📤 SDK Transformed Response (HTTP 202 Async):');
+          console.log(`   ${JSON.stringify(asyncResponse, null, 2).split('\n').join('\n   ')}`);
+          console.log('');
+        }
+        
+        return asyncResponse;
+      }
+
       // Step 6: Parse RECEIPT from success response (after payment)
       // This is the actual amount paid - use for cost tracking
+      // Support both new 'receipt' field and legacy 'x402Receipt' field
+      let receiptData = data.receipt || data.x402Receipt;
       let x402Receipt: X402Receipt | undefined;
-      if (data.x402Receipt) {
+      if (receiptData) {
         // RECEIPT: Backend provided actual payment receipt
         // Use this for accurate cost tracking (actual amount paid)
-        // Get payer address (Solana or EVM wallet) - use paymentWallet if it was switched
-        const payerWallet = paymentWallet || wallet;
-        let payerAddress = payerWallet.publicKey?.toString() || payerWallet.address;
-        
-        // If Base wallet doesn't have address, derive it from private key
-        if (!payerAddress && payerWallet.privateKey && typeof payerWallet.privateKey === 'string') {
-          try {
-            const { ethers } = await import('ethers');
-            const tempWallet = new ethers.Wallet(payerWallet.privateKey);
-            payerAddress = tempWallet.address;
-          } catch {
-            payerAddress = 'unknown';
-          }
-        }
-        
-        payerAddress = payerAddress || 'unknown';
-        // For Base transactions, prefer the actual transaction hash from backend
-        // If backend doesn't provide a valid hash (returns payment header instead), use computed hash
-        let txSignature = data.x402Receipt.transactionSignature;
-        
-        // Check if backend returned a valid Base transaction hash (0x + 64 hex chars = 66 chars)
-        const isValidBaseHash = txSignature && 
-                                txSignature.startsWith('0x') && 
-                                txSignature.length === 66 &&
-                                /^0x[a-fA-F0-9]{64}$/.test(txSignature);
-        
-        // If backend didn't return a valid hash, use computed hash for Base transactions
-        if (normalizedNetwork === 'base' && computedTxHash && !isValidBaseHash) {
-          // Backend returned payment header or invalid hash, use computed hash instead
-          txSignature = computedTxHash;
-        }
-        
-        x402Receipt = {
-          amountPaidUsdc: data.x402Receipt.amountPaidUsdc || amountUsdc || 0,
-          amountPaidMicroUsdc: data.x402Receipt.amountPaidMicroUsdc || amountMicroUsdc || 0,
-          payTo: data.x402Receipt.payTo || recipient || '',
-          transactionSignature: txSignature || paymentHeader || '',
-          payer: data.x402Receipt.payer || payerAddress,
-          merchant: data.x402Receipt.merchant || recipient || '',
-          timestamp: data.x402Receipt.timestamp || new Date().toISOString(),
-        };
+        x402Receipt = await this.parseReceipt(receiptData, paymentWallet || wallet, recipient, amountUsdc, amountMicroUsdc, paymentHeader, normalizedNetwork, computedTxHash);
       } else if (paymentHeader && recipient && amountUsdc !== undefined && amountMicroUsdc !== undefined) {
         // Fallback: Construct receipt from quote (until backend adds actual receipt)
         // Note: This uses the quoted amount, not actual amount paid
@@ -664,17 +676,59 @@ export class AgentsApiClient {
         };
       }
 
+      // Normalize format field to standardized values
+      let normalizedFormat: "text" | "json" | "markdown" = "text";
+      if (data.format) {
+        const formatLower = data.format.toLowerCase();
+        if (formatLower === "json") {
+          normalizedFormat = "json";
+        } else if (formatLower === "markdown") {
+          normalizedFormat = "markdown";
+        } else {
+          normalizedFormat = "text";
+        }
+      }
+
+      // Log final transformed response structure
+      if (this.verbose) {
+        const transformedResponse = {
+          success: data.success !== false,
+          response: data.response || data.message || "",
+          format: normalizedFormat,
+          mediaUrl: data.mediaUrl || data.media_url,
+          statusUrl: data.statusUrl || data.status_url,
+          imageUrl: data.imageUrl || data.image_url,
+          etaSeconds: data.etaSeconds || data.eta_seconds,
+          retryAfterSeconds: data.retryAfterSeconds,
+          transactionSignature: data.transactionSignature || paymentHeader,
+          agentId: data.agentId || agentId,
+          agentUuid: data.agentUuid,
+          timestamp: data.timestamp,
+          x402Version: data.x402Version,
+          receipt: x402Receipt,
+          x402Receipt,
+        };
+        console.log('   📤 SDK Transformed Response:');
+        console.log(`   ${JSON.stringify(transformedResponse, null, 2).split('\n').join('\n   ')}`);
+        console.log('');
+      }
+
       return {
-        success: data.success || true,
+        success: data.success !== false, // Default to true, but respect explicit false
         response: data.response || data.message || "",
-        format: data.format || "text",
+        format: normalizedFormat,
         mediaUrl: data.mediaUrl || data.media_url,
         statusUrl: data.statusUrl || data.status_url,
         imageUrl: data.imageUrl || data.image_url,
         etaSeconds: data.etaSeconds || data.eta_seconds,
+        retryAfterSeconds: data.retryAfterSeconds, // Polling interval (for async operations)
         transactionSignature: data.transactionSignature || paymentHeader,
         agentId: data.agentId || agentId,
-        x402Receipt, // Include receipt if available
+        agentUuid: data.agentUuid, // Internal UUID (optional)
+        timestamp: data.timestamp, // Server response time
+        x402Version: data.x402Version,
+        receipt: x402Receipt, // Standardized field name
+        x402Receipt, // Legacy field name (for backward compatibility)
         x402Quote: paymentHeader && amountUsdc !== undefined && amountMicroUsdc !== undefined ? {
           amountQuotedUsdc: amountUsdc, // Amount we paid (from quote)
           amountQuotedMicroUsdc: amountMicroUsdc,
@@ -687,7 +741,21 @@ export class AgentsApiClient {
         const status = error.response.status;
         const data = error.response.data;
 
+        // Log raw error response JSON
+        if (this.verbose) {
+          console.error(`\n   ❌ Error Response (HTTP ${status}):`);
+          console.error(`   ${JSON.stringify(data, null, 2).split('\n').join('\n   ')}`);
+          if (status === 500) {
+            const failedRequest = useCommandEndpoint && params ? { ...params } : { message };
+            console.error(`\n   📦 Request that failed:`);
+            console.error(`   ${JSON.stringify(failedRequest, null, 2).split('\n').join('\n   ')}`);
+          }
+          console.log('');
+        }
+
+        // Handle standardized error responses
         if (status === 402) {
+          // HTTP 402 Payment Required - unchanged format
           const errorMsg =
             data?.error ||
             data?.message ||
@@ -699,42 +767,31 @@ export class AgentsApiClient {
 
         if (status === 404) {
           const errorMsg = data?.error || data?.message || `Agent endpoint not found`;
+          const errorCode = data?.code || 'agent_not_found';
           throw new Error(
-            `${errorMsg}. Agent ID: "${agentId}", URL: ${this.baseUrl}/${this.chain}/${agentId}. ` +
+            `${errorMsg} (${errorCode}). Agent ID: "${agentId}", URL: ${this.baseUrl}/${this.chain}/${agentId}. ` +
             `Check that the agent exists and the API URL is correct.`
           );
         }
 
-        if (data?.error) {
+        if (data?.error || data?.success === false) {
+          // Standardized error format: { success: false, error: "...", code: "..." }
+          const errorMsg = data?.error || data?.message || "Unknown error";
+          const errorCode = data?.code;
+          
           // Include more context for 500 errors to help debug backend issues
           if (status === 500) {
-            const errorDetails = typeof data === 'string' 
-              ? data 
-              : JSON.stringify(data, null, 2);
-            if (this.verbose) {
-              console.error(`   ❌ Backend Error Response (${status}):`);
-              console.error(`   ${errorDetails}`);
-              const failedRequest = useCommandEndpoint && params ? { ...params } : { message };
-              console.error(`   📦 Request that failed: ${JSON.stringify(failedRequest, null, 2)}`);
-            }
-            throw new Error(`Internal server error: ${data.error || errorDetails}`);
+            throw new Error(`Internal server error${errorCode ? ` (${errorCode})` : ''}: ${errorMsg}`);
           }
-          throw new Error(data.error);
+          
+          // Include error code if available
+          throw new Error(errorCode ? `${errorMsg} (${errorCode})` : errorMsg);
         }
 
         // Log full response for debugging
         const errorDetails = typeof data === 'string' 
           ? data 
           : JSON.stringify(data, null, 2);
-        
-        if (this.verbose) {
-          console.error(`   ❌ Backend Error Response (${status}):`);
-          console.error(`   ${errorDetails}`);
-          if (status === 500) {
-            const failedRequest = useCommandEndpoint && params ? { ...params } : { message };
-            console.error(`   📦 Request that failed: ${JSON.stringify(failedRequest, null, 2)}`);
-          }
-        }
         
         throw new Error(`API error (${status}): ${errorDetails}`);
       }
@@ -744,8 +801,66 @@ export class AgentsApiClient {
   }
 
   /**
+   * Helper method to parse receipt from response data
+   * Supports both new standardized format and legacy format
+   */
+  private async parseReceipt(
+    receiptData: any,
+    wallet: any,
+    recipient: string | undefined,
+    amountUsdc: number | undefined,
+    amountMicroUsdc: number | undefined,
+    paymentHeader: string | undefined,
+    normalizedNetwork: string,
+    computedTxHash: string | undefined
+  ): Promise<X402Receipt> {
+    // Get payer address (Solana or EVM wallet)
+    let payerAddress = wallet.publicKey?.toString() || wallet.address;
+    
+    // If Base wallet doesn't have address, derive it from private key
+    if (!payerAddress && wallet.privateKey && typeof wallet.privateKey === 'string') {
+      try {
+        const { ethers } = await import('ethers');
+        const tempWallet = new ethers.Wallet(wallet.privateKey);
+        payerAddress = tempWallet.address;
+      } catch {
+        payerAddress = 'unknown';
+      }
+    }
+    
+    payerAddress = payerAddress || 'unknown';
+    
+    // For Base transactions, prefer the actual transaction hash from backend
+    // If backend doesn't provide a valid hash (returns payment header instead), use computed hash
+    let txSignature = receiptData.transactionSignature;
+    
+    // Check if backend returned a valid Base transaction hash (0x + 64 hex chars = 66 chars)
+    const isValidBaseHash = txSignature && 
+                            txSignature.startsWith('0x') && 
+                            txSignature.length === 66 &&
+                            /^0x[a-fA-F0-9]{64}$/.test(txSignature);
+    
+    // If backend didn't return a valid hash, use computed hash for Base transactions
+    if (normalizedNetwork === 'base' && computedTxHash && !isValidBaseHash) {
+      // Backend returned payment header or invalid hash, use computed hash instead
+      txSignature = computedTxHash;
+    }
+    
+    return {
+      amountPaidUsdc: receiptData.amountPaidUsdc || amountUsdc || 0,
+      amountPaidMicroUsdc: receiptData.amountPaidMicroUsdc || amountMicroUsdc || 0,
+      payTo: receiptData.payTo || recipient || '',
+      transactionSignature: txSignature || paymentHeader || '',
+      payer: receiptData.payer || payerAddress,
+      merchant: receiptData.merchant || recipient || '',
+      timestamp: receiptData.timestamp || new Date().toISOString(),
+    };
+  }
+
+  /**
    * Check status of async operation
    * Status URLs point to agents-api proxy (no auth required)
+   * Supports both legacy status field and new state field
    */
   async checkStatus(statusUrl: string): Promise<StatusCheckResult> {
     try {
@@ -753,17 +868,58 @@ export class AgentsApiClient {
       // Handle both wrapped (ok()) and unwrapped responses
       const data = response.data.data || response.data;
 
-      return {
-        status: data.status || "pending",
-        message: data.message,
+      // Log raw status response JSON
+      if (this.verbose) {
+        console.log(`\n   📦 Status Check Response (${statusUrl}):`);
+        console.log(`   ${JSON.stringify(data, null, 2).split('\n').join('\n   ')}`);
+        console.log('');
+      }
+
+      // Map standardized state field to legacy status field for backward compatibility
+      let status: "pending" | "processing" | "completed" | "failed" = "pending";
+      const state = data.state || data.status;
+      
+      if (state === "succeeded" || state === "completed") {
+        status = "completed";
+      } else if (state === "failed") {
+        status = "failed";
+      } else if (state === "processing") {
+        status = "processing";
+      } else {
+        status = "pending";
+      }
+
+      const statusResult = {
+        status, // Legacy field
+        state: data.state || (state === "completed" ? "succeeded" : state), // Standardized field
+        message: data.message || data.response,
+        response: data.response, // Final result content
+        artifactUrl: data.artifactUrl,
         imageUrl: data.imageUrl || data.image_url,
         mediaUrl: data.mediaUrl || data.media_url,
         error: data.error,
+        code: data.code, // Machine-readable error code (e.g., "generation_timeout", "generation_failed")
       };
+
+      // Log transformed status result
+      if (this.verbose) {
+        console.log('   📤 SDK Transformed Status Result:');
+        console.log(`   ${JSON.stringify(statusResult, null, 2).split('\n').join('\n   ')}`);
+        console.log('');
+      }
+
+      return statusResult;
     } catch (error: any) {
       if (error.response?.data) {
+        // Log error response
+        if (this.verbose) {
+          console.error(`\n   ❌ Status Check Error Response:`);
+          console.error(`   ${JSON.stringify(error.response.data, null, 2).split('\n').join('\n   ')}`);
+          console.log('');
+        }
         return {
           status: "failed",
+          state: "failed",
           error: error.response.data.error || "Status check failed",
         };
       }
@@ -773,17 +929,21 @@ export class AgentsApiClient {
 
   /**
    * Poll status URL until completion or timeout
+   * Uses retryAfterSeconds from initial HTTP 202 response if available, otherwise uses intervalMs
    */
   async pollStatus(
     statusUrl: string,
     options: {
       maxAttempts?: number;
       intervalMs?: number;
+      retryAfterSeconds?: number; // Polling interval from HTTP 202 response (default: 2s)
       onProgress?: (attempt: number, status: StatusCheckResult) => void;
     } = {},
   ): Promise<StatusCheckResult> {
-    const maxAttempts = options.maxAttempts || 60; // 5 minutes at 5s intervals
-    const intervalMs = options.intervalMs || 5000;
+    const maxAttempts = options.maxAttempts || 60; // 5 minutes at default intervals
+    // Use retryAfterSeconds from HTTP 202 response if provided, otherwise use intervalMs or default to 2s
+    const retryAfterSeconds = options.retryAfterSeconds ?? (options.intervalMs ? options.intervalMs / 1000 : 2);
+    const intervalMs = retryAfterSeconds * 1000;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const result = await this.checkStatus(statusUrl);
@@ -792,7 +952,11 @@ export class AgentsApiClient {
         options.onProgress(attempt, result);
       }
 
-      if (result.status === "completed" || result.status === "failed") {
+      // Check both legacy status and new state field
+      const isComplete = result.status === "completed" || result.state === "succeeded";
+      const isFailed = result.status === "failed" || result.state === "failed";
+      
+      if (isComplete || isFailed) {
         return result;
       }
 
@@ -803,7 +967,9 @@ export class AgentsApiClient {
 
     return {
       status: "failed",
+      state: "failed",
       error: "Timeout waiting for completion",
+      code: "timeout",
     };
   }
 }

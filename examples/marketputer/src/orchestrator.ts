@@ -1,5 +1,5 @@
 import { Connection, Keypair } from '@solana/web3.js';
-import { Memeputer, PromptResult, getUsdcBalance } from '@memeputer/sdk';
+import { Memeputer, PromptResult, StatusCheckResult, getUsdcBalance } from '@memeputer/sdk';
 import { OrchestratorConfig, TaskRequest, TaskResult } from './types';
 import { CleanLogger } from './lib/logger';
 import { getTxUrl, getAccountUrl, detectNetwork } from './lib/utils';
@@ -178,8 +178,8 @@ export class Orchestrator {
         postedLinks
       );
     } catch (error) {
-      console.error('\n❌ Error during task execution:');
-      console.error(error instanceof Error ? error.stack : error);
+      this.logger.error('\nError during task execution:');
+      this.logger.logError(error instanceof Error ? error.stack || error.message : String(error));
       return {
         success: false,
         totalSpent: this.totalSpent,
@@ -211,33 +211,30 @@ export class Orchestrator {
     });
     
     // Log the raw command result for debugging
-    console.log('\n   📋 Trendputer Command Result:');
-    console.log(`   Response length: ${trendsResult.response?.length || 0} characters`);
-    console.log(`   Response preview: ${trendsResult.response?.substring(0, 500) || 'empty'}${trendsResult.response && trendsResult.response.length > 500 ? '...' : ''}`);
     if (trendsResult.response) {
+      this.logger.commandResult('Trendputer Command Result', trendsResult.response);
       try {
         const preview = JSON.parse(trendsResult.response);
-        console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+        this.logger.jsonData('Valid JSON structure', {
           itemsCount: preview.items?.length || 0,
           hasMetadata: !!preview.metadata,
           firstItemKeys: preview.items?.[0] ? Object.keys(preview.items[0]) : []
-        }, null, 2));
+        });
       } catch {
-        console.log(`   ⚠️  Response is not valid JSON`);
+        this.logger.warn('Response is not valid JSON');
       }
     }
-    console.log('');
+    this.logger.spacer();
     
     // Parse trends response - guaranteed to be valid JSON
     try {
       const trends = JSON.parse(trendsResult.response);
       this.logger.result('✅', `Got ${trends?.items?.length || 0} trends`);
       if (trends?.items && trends.items.length > 0) {
-        trends.items.forEach((trend: any, idx: number) => {
-          console.log(`      ${idx + 1}. ${trend.title || 'Untitled'}`);
-          if (trend.summary) {
-            console.log(`         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}`);
-          }
+        this.logger.list('Trends', trends.items, (trend: any, idx: number) => {
+          const title = `      ${idx + 1}. ${trend.title || 'Untitled'}`;
+          const summary = trend.summary ? `\n         ${trend.summary.substring(0, 80)}${trend.summary.length > 80 ? '...' : ''}` : '';
+          return title + summary;
         });
       }
       return trends;
@@ -352,6 +349,44 @@ export class Orchestrator {
   }
 
   private async processImageResult(imageResult: PromptResult): Promise<{ imageUrl: string | null; imageHash: string | null; imageStatusUrl: string | null }> {
+    // Log the complete PFPputer response structure for debugging
+    this.logger.info('📋 PFPputer Response Structure (x402 spec):');
+    this.logger.info(JSON.stringify({
+      success: imageResult.success,
+      response: imageResult.response,
+      format: imageResult.format,
+      statusUrl: imageResult.statusUrl,
+      imageUrl: imageResult.imageUrl,
+      mediaUrl: imageResult.mediaUrl,
+      etaSeconds: imageResult.etaSeconds,
+      transactionSignature: imageResult.transactionSignature,
+      agentId: imageResult.agentId,
+      receipt: ((imageResult as any).receipt || imageResult.x402Receipt) ? {
+        amountPaidUsdc: ((imageResult as any).receipt || imageResult.x402Receipt)!.amountPaidUsdc,
+        amountPaidMicroUsdc: ((imageResult as any).receipt || imageResult.x402Receipt)!.amountPaidMicroUsdc,
+        payTo: ((imageResult as any).receipt || imageResult.x402Receipt)!.payTo,
+        transactionSignature: ((imageResult as any).receipt || imageResult.x402Receipt)!.transactionSignature,
+        payer: ((imageResult as any).receipt || imageResult.x402Receipt)!.payer,
+        merchant: ((imageResult as any).receipt || imageResult.x402Receipt)!.merchant,
+        timestamp: ((imageResult as any).receipt || imageResult.x402Receipt)!.timestamp,
+      } : undefined,
+      x402Receipt: imageResult.x402Receipt ? {
+        amountPaidUsdc: imageResult.x402Receipt.amountPaidUsdc,
+        amountPaidMicroUsdc: imageResult.x402Receipt.amountPaidMicroUsdc,
+        payTo: imageResult.x402Receipt.payTo,
+        transactionSignature: imageResult.x402Receipt.transactionSignature,
+        payer: imageResult.x402Receipt.payer,
+        merchant: imageResult.x402Receipt.merchant,
+        timestamp: imageResult.x402Receipt.timestamp,
+      } : undefined,
+      x402Quote: imageResult.x402Quote ? {
+        amountQuotedUsdc: imageResult.x402Quote.amountQuotedUsdc,
+        amountQuotedMicroUsdc: imageResult.x402Quote.amountQuotedMicroUsdc,
+        maxAmountRequired: imageResult.x402Quote.maxAmountRequired,
+      } : undefined,
+    }, null, 2));
+    this.logger.spacer();
+    
     let imageStatusUrl: string | null = null;
     if (imageResult.statusUrl) {
       imageStatusUrl = imageResult.statusUrl;
@@ -374,19 +409,25 @@ export class Orchestrator {
     
     if (!imageUrl && imageResult.statusUrl) {
       this.logger.info('Image generation in progress...');
+      // Use retryAfterSeconds from initial HTTP 202 response if available (default: 2s)
+      const retryAfterSeconds = (imageResult as any).retryAfterSeconds;
       const statusResult = await this.memeputer.pollStatus(imageResult.statusUrl, {
         maxAttempts: 120,
-        intervalMs: 1000,
-        onProgress: (attempt, _status) => {
+        retryAfterSeconds: retryAfterSeconds, // Use from HTTP 202 response
+        intervalMs: retryAfterSeconds ? retryAfterSeconds * 1000 : 1000, // Fallback to 1s if not provided
+        onProgress: (attempt: number, _status: StatusCheckResult) => {
           const elapsedSeconds = attempt - 1;
           if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
             this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed)`);
           }
         },
-      });
+      } as any);
       imageUrl = statusResult.imageUrl || statusResult.mediaUrl || null;
-      if (statusResult.status === 'failed') {
-        throw new Error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
+      const statusState = (statusResult as any).state;
+      const statusCode = (statusResult as any).code;
+      if (statusResult.status === 'failed' || statusState === 'failed') {
+        const errorCode = statusCode ? ` (${statusCode})` : '';
+        throw new Error(`Image generation failed${errorCode}: ${statusResult.error || 'Unknown error'}`);
       }
     }
     
@@ -410,25 +451,32 @@ export class Orchestrator {
     // If we have a statusUrl, poll it until image is ready
     if (statusUrl) {
       this.logger.info('Waiting for image to be ready (polling status URL)...');
+      // Note: retryAfterSeconds would come from the initial HTTP 202 response, but we don't have it here
+      // Default to 2s as per spec
       const statusResult = await this.memeputer.pollStatus(statusUrl, {
         maxAttempts: 120,
-        intervalMs: 1000,
-        onProgress: (attempt, status) => {
+        retryAfterSeconds: 2, // Default per spec
+        intervalMs: 2000, // Default 2s per spec
+        onProgress: (attempt: number, status: StatusCheckResult) => {
           const elapsedSeconds = attempt - 1;
+          const statusState = (status as any).state;
           if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
-            this.logger.info(`   ⏳ Still waiting for image... (${elapsedSeconds}s elapsed, status: ${status.status})`);
+            this.logger.info(`   ⏳ Still waiting for image... (${elapsedSeconds}s elapsed, status: ${status.status || statusState})`);
           }
         },
-      });
+      } as any);
 
-      if (statusResult.status === 'completed') {
+      const statusState = (statusResult as any).state;
+      if (statusResult.status === 'completed' || statusState === 'succeeded') {
         const readyUrl = statusResult.imageUrl || statusResult.mediaUrl || imageUrl;
         if (readyUrl) {
           this.logger.result('✅', 'Image is ready');
           return readyUrl;
         }
-      } else if (statusResult.status === 'failed') {
-        this.logger.error(`Image generation failed: ${statusResult.error || 'Unknown error'}`);
+      } else if (statusResult.status === 'failed' || statusState === 'failed') {
+        const statusCode = (statusResult as any).code;
+        const errorCode = statusCode ? ` (${statusCode})` : '';
+        this.logger.error(`Image generation failed${errorCode}: ${statusResult.error || 'Unknown error'}`);
         return null;
       }
     }
@@ -504,18 +552,23 @@ export class Orchestrator {
       if (statusUrl) {
         // Use SDK's pollStatus method for proper async handling
         this.logger.info('Image description in progress (async operation)...');
+        // Use retryAfterSeconds from initial HTTP 202 response if available (default: 2s)
+        const retryAfterSeconds = (descriptionResult as any).retryAfterSeconds;
         const statusResult = await this.memeputer.pollStatus(statusUrl, {
           maxAttempts: 120,
-          intervalMs: 1000,
-          onProgress: (attempt, status) => {
+          retryAfterSeconds: retryAfterSeconds, // Use from HTTP 202 response
+          intervalMs: retryAfterSeconds ? retryAfterSeconds * 1000 : 1000, // Fallback to 1s if not provided
+          onProgress: (attempt: number, status: StatusCheckResult) => {
             const elapsedSeconds = attempt - 1;
+            const statusState = (status as any).state;
             if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
-              this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed, status: ${status.status})`);
+              this.logger.info(`   ⏳ Still processing... (${elapsedSeconds}s elapsed, status: ${status.status || statusState})`);
             }
           },
-        });
+        } as any);
         
-        if (statusResult.status === 'completed') {
+        const statusState = (statusResult as any).state;
+        if (statusResult.status === 'completed' || statusState === 'succeeded') {
           // Extract description from status result
           let description: string | null = null;
           let data: any = null;
@@ -547,10 +600,12 @@ export class Orchestrator {
           }
           
           return { description, data: data || { description } };
-        } else if (statusResult.status === 'failed') {
-          throw new Error(`Image description failed: ${statusResult.error || 'Unknown error'}`);
+        } else if (statusResult.status === 'failed' || statusState === 'failed') {
+          const statusCode = (statusResult as any).code;
+          const errorCode = statusCode ? ` (${statusCode})` : '';
+          throw new Error(`Image description failed${errorCode}: ${statusResult.error || 'Unknown error'}`);
         } else {
-          this.logger.warn(`Unexpected status: ${statusResult.status}`);
+          this.logger.warn(`Unexpected status: ${statusResult.status || statusState}`);
           return { description: null, data: null };
         }
       } else {
@@ -894,13 +949,16 @@ export class Orchestrator {
 
       // Track payment if transaction occurred
       if (result.transactionSignature) {
+        // Use standardized receipt field with fallback to legacy x402Receipt
+        const receipt = ((result as any).receipt || result.x402Receipt) as any;
+        
         // Receipt should always be present after payment - quote is only in 402 response before payment
-        if (!result.x402Receipt?.amountPaidUsdc) {
+        if (!receipt?.amountPaidUsdc) {
           throw new Error(`Payment transaction exists but no receipt amount found for ${agentId}`);
         }
         
         // Use receipt amount (actual paid) - this is what we actually spent
-        const actualAmount = result.x402Receipt.amountPaidUsdc;
+        const actualAmount = receipt.amountPaidUsdc;
         
         this.totalSpent += actualAmount;
         this.agentsHired.push(agentId);
@@ -912,9 +970,9 @@ export class Orchestrator {
         });
 
         // Log payment details - use receipt amount (actual paid) for display
-        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
-        const paymentAmount = result.x402Receipt?.amountPaidUsdc || actualAmount;
+        const payer = receipt?.payer || this.wallet.publicKey.toString();
+        const merchant = receipt?.merchant || receipt?.payTo || '';
+        const paymentAmount = receipt?.amountPaidUsdc || actualAmount;
         
         this.logger.payment({
           agentId,
@@ -925,71 +983,7 @@ export class Orchestrator {
           fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
           toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: result.x402Receipt?.amountPaidUsdc,
-        });
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.failLoading(`Failed to pay ${agentId}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Hire an agent with a natural language prompt and track payment
-   * 
-   * This demonstrates agent-to-agent economy:
-   * - The orchestrator agent pays from the provided wallet
-   * - Each payment is tracked and deducted from the agent's budget
-   * - The actual payment amount comes from the 402 receipt/quote
-   */
-  private async hireAgentWithPrompt(
-    agentId: string,
-    prompt: string
-  ): Promise<PromptResult> {
-    this.logger.startLoading(`Calling ${agentId}...`);
-    
-    try {
-      // Call agent via SDK with natural language prompt (payment handled internally by SDK)
-      const result = await this.memeputer.prompt(agentId, prompt);
-      
-      this.logger.stopLoading(`Completed ${agentId}`);
-
-      // Track payment if transaction occurred
-      if (result.transactionSignature) {
-        // Receipt should always be present after payment - quote is only in 402 response before payment
-        if (!result.x402Receipt?.amountPaidUsdc) {
-          throw new Error(`Payment transaction exists but no receipt amount found for ${agentId}`);
-        }
-        
-        // Use receipt amount (actual paid) - this is what we actually spent
-        const actualAmount = result.x402Receipt.amountPaidUsdc;
-        
-        this.totalSpent += actualAmount;
-        this.agentsHired.push(agentId);
-        this.payments.push({
-          agentId,
-          command: 'prompt',
-          amount: actualAmount,
-          txId: result.transactionSignature,
-        });
-
-        // Log payment details - use receipt amount (actual paid) for display
-        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
-        const paymentAmount = result.x402Receipt?.amountPaidUsdc || actualAmount;
-        
-        this.logger.payment({
-          agentId,
-          amount: paymentAmount,
-          transactionSignature: result.transactionSignature,
-          txUrl: getTxUrl(result.transactionSignature, this.network),
-          fromWallet: payer,
-          fromWalletUrl: getAccountUrl(payer, this.network),
-          toWallet: merchant,
-          toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: result.x402Receipt?.amountPaidUsdc,
+          receiptAmount: receipt?.amountPaidUsdc,
         });
       }
 
@@ -1028,37 +1022,33 @@ export class Orchestrator {
     };
 
     // Log input parameters
-    console.log('\n   📋 Trendputer Command Input:');
-    console.log(`   Task: "${task}"`);
-    console.log(`   Trends: ${trends.length} trends to evaluate`);
-    trends.forEach((trend, idx) => {
-      console.log(`   ${idx + 1}. "${trend.title || 'Untitled'}" (score: ${trend.score || 'N/A'})`);
+    this.logger.commandInput('Trendputer Command Input', {
+      Task: `"${task}"`,
+      Trends: `${trends.length} trends to evaluate`,
+      TrendList: trends.map((t, idx) => `${idx + 1}. "${t.title || 'Untitled'}" (score: ${t.score || 'N/A'})`).join('\n'),
+      Criteria: commandParams.criteria.join(', ')
     });
-    console.log(`   Criteria: ${commandParams.criteria.join(', ')}`);
-    console.log('');
 
     try {
       // Step 3: Select Best Trend - Uses Trendputer command to evaluate trends and select highest quality option
       const result = await this.hireAgentWithCommand('trendputer', 'select_best_trend', commandParams);
 
       // Log the raw command result for debugging
-      console.log('\n   📋 Trendputer Command Result:');
-      console.log(`   Response length: ${result.response?.length || 0} characters`);
-      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
       if (result.response) {
+        this.logger.commandResult('Trendputer Command Result', result.response);
         try {
           const preview = JSON.parse(result.response);
-          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+          this.logger.jsonData('Valid JSON structure', {
             hasData: !!preview.data,
             selectedIndex: preview.data?.selectedIndex,
             hasSelectedTrend: !!preview.data?.selectedTrend,
             hasReasoning: !!preview.data?.reasoning
-          }, null, 2));
+          });
         } catch {
-          console.log(`   ⚠️  Response is not valid JSON`);
+          this.logger.warn('Response is not valid JSON');
         }
       }
-      console.log('');
+      this.logger.spacer();
 
       // Parse response - guaranteed format: { "data": { selectedIndex: number, selectedTrend?: {...}, reasoning?: string } }
       // Handle potential double-wrapping: { "data": { "data": { ... } } }
@@ -1134,20 +1124,19 @@ export class Orchestrator {
     scoredTrends.sort((a, b) => b.score - a.score);
     
     // Log top 3 candidates
-    console.log(`   📊 Top trend candidates (heuristic):`);
-    scoredTrends.slice(0, 3).forEach((item, idx) => {
-      console.log(`      ${idx + 1}. "${item.trend.title}" (score: ${item.score.toFixed(1)})`);
-    });
+    this.logger.list('📊 Top trend candidates (heuristic)', scoredTrends.slice(0, 3), (item, idx) => 
+      `      ${idx + 1}. "${item.trend.title}" (score: ${item.score.toFixed(1)})`
+    );
     
     // Only use trend if score is above threshold
     const bestTrend = scoredTrends[0];
     const threshold = 10; // Minimum score to consider
     
     if (bestTrend.score >= threshold) {
-      console.log(`   ✅ Selected trend with score ${bestTrend.score.toFixed(1)} (threshold: ${threshold})`);
+      this.logger.result('✅', `Selected trend with score ${bestTrend.score.toFixed(1)} (threshold: ${threshold})`);
       return bestTrend.trend;
     } else {
-      console.log(`   ⚠️  Best trend score ${bestTrend.score.toFixed(1)} below threshold ${threshold} - rejecting all trends`);
+      this.logger.warn(`Best trend score ${bestTrend.score.toFixed(1)} below threshold ${threshold} - rejecting all trends`);
       return null;
     }
   }
@@ -1172,34 +1161,33 @@ export class Orchestrator {
     };
 
     // Log input parameters
-    console.log('\n   📋 Keywordputer Command Input:');
-    console.log(`   Task: "${task}"`);
-    console.log(`   Context: ${commandParams.context}`);
-    console.log(`   Target Audience: ${commandParams.targetAudience}`);
-    console.log(`   Content Goal: ${commandParams.contentGoal}`);
-    console.log(`   Max Keywords: ${commandParams.maxKeywords}`);
+    this.logger.commandInput('Keywordputer Command Input', {
+      Task: `"${task}"`,
+      Context: commandParams.context,
+      'Target Audience': commandParams.targetAudience,
+      'Content Goal': commandParams.contentGoal,
+      'Max Keywords': commandParams.maxKeywords
+    });
 
     try {
       // Step 1: Extract Keywords using Keywordputer command
       const result = await this.hireAgentWithCommand('keywordputer', 'keywords', commandParams);
 
       // Log the raw command result for debugging
-      console.log('\n   📋 Keywordputer Command Result:');
-      console.log(`   Response length: ${result.response?.length || 0} characters`);
-      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
       if (result.response) {
+        this.logger.commandResult('Keywordputer Command Result', result.response);
         try {
           const preview = JSON.parse(result.response);
-          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+          this.logger.jsonData('Valid JSON structure', {
             hasData: !!preview.data,
             keywordsCount: preview.data?.keywords?.length || 0,
             keywords: preview.data?.keywords || []
-          }, null, 2));
+          });
         } catch {
-          console.log(`   ⚠️  Response is not valid JSON`);
+          this.logger.warn('Response is not valid JSON');
         }
       }
-      console.log('');
+      this.logger.spacer();
 
       // Parse response - guaranteed format: { "data": { "keywords": [...] } }
       try {
@@ -1259,36 +1247,38 @@ export class Orchestrator {
       };
       
       // Log input parameters
-      console.log('\n   📋 Promptputer Command Input:');
-      console.log(`   Base Prompt: ${basePrompt.substring(0, 100)}${basePrompt.length > 100 ? '...' : ''}`);
-      console.log(`   Quality Modifiers: ${commandParams.qualityModifiers.join(', ')}`);
-      console.log(`   Style: ${commandParams.style}, Detail Level: ${commandParams.detailLevel}, Tone: ${commandParams.tone}`);
-      console.log('');
+      this.logger.commandInput('Promptputer Command Input', {
+        'Base Prompt': `${basePrompt.substring(0, 100)}${basePrompt.length > 100 ? '...' : ''}`,
+        'Quality Modifiers': commandParams.qualityModifiers.join(', '),
+        'Style': commandParams.style,
+        'Detail Level': commandParams.detailLevel,
+        'Tone': commandParams.tone
+      });
       
       const result = await this.hireAgentWithCommand('promptputer', 'enhance_prompt', commandParams);
       
       // Log the raw command result for debugging
-      console.log('\n   📋 Promptputer Command Result:');
-      console.log(`   Response length: ${result.response?.length || 0} characters`);
-      console.log(`   Response preview: ${result.response?.substring(0, 500) || 'empty'}${result.response && result.response.length > 500 ? '...' : ''}`);
       if (result.response) {
+        this.logger.commandResult('Promptputer Command Result', result.response);
         try {
           const preview = JSON.parse(result.response);
-          console.log(`   ✅ Valid JSON structure:`, JSON.stringify({
+          this.logger.jsonData('Valid JSON structure', {
             hasEnhancedPrompt: !!preview.enhancedPrompt,
             enhancedPromptLength: preview.enhancedPrompt?.length || 0,
             modifiersApplied: preview.modifiersApplied?.length || 0,
             style: preview.style,
             detailLevel: preview.detailLevel,
-          }, null, 2));
+          });
         } catch {
-          console.log(`   ⚠️  Response is not valid JSON`);
+          this.logger.warn('Response is not valid JSON');
         }
       }
-      console.log('');
+      this.logger.spacer();
 
       if (result.transactionSignature) {
-        const actualAmount = result.x402Receipt?.amountPaidUsdc || 0.01;
+        // Use standardized receipt field with fallback to legacy x402Receipt
+        const receipt = ((result as any).receipt || result.x402Receipt) as any;
+        const actualAmount = receipt?.amountPaidUsdc || 0.01;
         this.totalSpent += actualAmount;
         this.payments.push({
           agentId: 'promptputer',
@@ -1298,8 +1288,8 @@ export class Orchestrator {
         });
         
         // Log payment
-        const payer = result.x402Receipt?.payer || this.wallet.publicKey.toString();
-        const merchant = result.x402Receipt?.merchant || result.x402Receipt?.payTo || '';
+        const payer = receipt?.payer || this.wallet.publicKey.toString();
+        const merchant = receipt?.merchant || receipt?.payTo || '';
         const paymentAmount = result.x402Quote?.amountQuotedUsdc || actualAmount;
         
         this.logger.payment({
@@ -1311,7 +1301,7 @@ export class Orchestrator {
           fromWalletUrl: getAccountUrl(payer, this.network),
           toWallet: merchant,
           toWalletUrl: merchant ? getAccountUrl(merchant, this.network) : undefined,
-          receiptAmount: result.x402Receipt?.amountPaidUsdc,
+          receiptAmount: receipt?.amountPaidUsdc,
         });
       }
 
@@ -1324,21 +1314,21 @@ export class Orchestrator {
         this.logger.result('✅', 'Got enhanced prompt');
         
         // Log the enhanced prompt output (human-readable)
-        console.log('   📝 Enhanced Prompt Output:');
-        console.log(`   ${enhancedPrompt.substring(0, 200)}${enhancedPrompt.length > 200 ? '...' : ''}`);
+        this.logger.info('📝 Enhanced Prompt Output:');
+        this.logger.info(`${enhancedPrompt.substring(0, 200)}${enhancedPrompt.length > 200 ? '...' : ''}`);
         const modifiersApplied = data.modifiersApplied || parsed.modifiersApplied;
         if (modifiersApplied && modifiersApplied.length > 0) {
-          console.log(`   Modifiers Applied: ${modifiersApplied.join(', ')}`);
+          this.logger.info(`Modifiers Applied: ${modifiersApplied.join(', ')}`);
         }
-        console.log('');
+        this.logger.spacer();
         
         return enhancedPrompt.trim();
       } catch (parseError) {
         // If JSON parsing fails, fall back to raw response
         this.logger.warn('Failed to parse enhanced prompt as JSON, using raw response');
-        console.log('   ⚠️  Using raw response (not JSON):');
-        console.log(`   ${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}`);
-        console.log('');
+        this.logger.warn('Using raw response (not JSON):');
+        this.logger.info(`${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}`);
+        this.logger.spacer();
         return result.response.trim();
       }
     } catch (error) {

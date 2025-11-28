@@ -186,5 +186,70 @@ export class CleanLogger {
   spacer(): void {
     console.log('');
   }
+
+  /**
+   * Log command input details
+   */
+  commandInput(title: string, details: Record<string, any>): void {
+    console.log(`\n   📋 ${title}:`);
+    for (const [key, value] of Object.entries(details)) {
+      if (Array.isArray(value)) {
+        console.log(`   ${key}: ${value.join(', ')}`);
+      } else if (typeof value === 'object' && value !== null) {
+        console.log(`   ${key}: ${JSON.stringify(value, null, 2).split('\n').join('\n   ')}`);
+      } else {
+        console.log(`   ${key}: ${value}`);
+      }
+    }
+  }
+
+  /**
+   * Log command result details
+   */
+  commandResult(title: string, response: string, maxPreviewLength: number = 500): void {
+    console.log(`\n   📋 ${title}:`);
+    console.log(`   Response length: ${response?.length || 0} characters`);
+    const preview = response?.substring(0, maxPreviewLength) || 'empty';
+    console.log(`   Response preview: ${preview}${response && response.length > maxPreviewLength ? '...' : ''}`);
+  }
+
+  /**
+   * Log structured JSON data
+   */
+  jsonData(title: string, data: any, isValid: boolean = true): void {
+    if (isValid) {
+      console.log(`   ✅ ${title}:`, JSON.stringify(data, null, 2).split('\n').map(line => `   ${line}`).join('\n'));
+    } else {
+      console.log(`   ⚠️  ${title}`);
+    }
+  }
+
+  /**
+   * Log a list of items
+   */
+  list(title: string, items: Array<{ [key: string]: any }>, formatter?: (item: any, idx: number) => string): void {
+    console.log(`   ${title}:`);
+    items.forEach((item, idx) => {
+      if (formatter) {
+        console.log(formatter(item, idx));
+      } else {
+        console.log(`      ${idx + 1}. ${JSON.stringify(item)}`);
+      }
+    });
+  }
+
+  /**
+   * Log a simple message (for compatibility with console.log)
+   */
+  log(message: string): void {
+    console.log(message);
+  }
+
+  /**
+   * Log an error message (for compatibility with console.error)
+   */
+  logError(message: string): void {
+    console.error(message);
+  }
 }
 

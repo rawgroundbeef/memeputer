@@ -276,12 +276,14 @@ export class Memeputer {
 
   /**
    * Poll status URL until completion or timeout
+   * Uses retryAfterSeconds from initial HTTP 202 response if available
    */
   async pollStatus(
     statusUrl: string,
     options?: {
       maxAttempts?: number;
       intervalMs?: number;
+      retryAfterSeconds?: number; // Polling interval from HTTP 202 response (default: 2s)
       onProgress?: (attempt: number, status: StatusCheckResult) => void;
     },
   ): Promise<StatusCheckResult> {
