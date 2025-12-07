@@ -410,7 +410,7 @@ export function createRunCommand(): Command {
           logger.log('\n✅ Loop stopped gracefully');
         }
       } catch (error) {
-        logger.logError('❌ Error:', error instanceof Error ? error.message : String(error));
+        logger.logError(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);
       }
     });
