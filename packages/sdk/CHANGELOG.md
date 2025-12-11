@@ -1,5 +1,17 @@
 # @memeputer/sdk
 
+## 1.9.1
+
+### Patch Changes
+
+- Fix EIP-3009 authorization clock skew issue
+  - Add 60-second buffer to validAfter timestamp to account for blockchain clock skew
+  - Prevents "authorization is not yet valid" errors when blockchain timestamp is slightly behind
+- Fix Solana fee payer address handling
+  - Use fee payer address from 402 response instead of hardcoded value
+  - Update fallback fee payer to correct address (561oabzy81vXYYbs1ZHR1bvpiEr6Nbfd6PGTxPshoz4p)
+  - Fixes transaction signature verification failures
+
 ## 1.7.0
 
 ### Minor Changes
