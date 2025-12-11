@@ -105,7 +105,7 @@ async function createEip3009Authorization(
       from: evmWallet.address,
       to: recipient,
       value: amount.toString(), // String format for EIP-712
-      validAfter: now.toString(),
+      validAfter: (now - 60).toString(), // 60 second buffer for clock skew between client, server, and blockchain
       validBefore: (now + 300).toString(), // 5 minute window for PayAI to execute
       nonce: "0x" + randomBytes(32).toString("hex") // Random 32-byte nonce
     };
@@ -207,6 +207,7 @@ export async function createPaymentTransaction(
   network: string = "solana",
   amountMicroUsdc?: number, // Optional: pass atomic units directly to avoid floating point precision issues
   rpcUrl?: string, // Optional: RPC URL for EVM chains
+  feePayer?: string, // Optional: Fee payer address from 402 response (for Solana transactions)
 ): Promise<{ transaction: VersionedTransaction | any; signature: string; txSignature?: string; txHash?: string }> {
   // Route to appropriate payment method based on network
   if (network === 'base' || network === 'ethereum' || network === 'polygon' || network === 'arbitrum') {
@@ -285,9 +286,9 @@ export async function createPaymentTransaction(
     const { blockhash } = await connection.getLatestBlockhash("confirmed");
 
     // Set facilitator as fee payer for gas-free transactions!
-    const facilitatorPublicKey = new PublicKey(
-      "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4",
-    );
+    // Use fee payer from 402 response if provided, otherwise fall back to default
+    const feePayerAddress = feePayer || "561oabzy81vXYYbs1ZHR1bvpiEr6Nbfd6PGTxPshoz4p";
+    const facilitatorPublicKey = new PublicKey(feePayerAddress);
 
     // Create VersionedTransaction (x402 standard)
     const message = new TransactionMessage({

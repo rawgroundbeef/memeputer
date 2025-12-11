@@ -452,6 +452,7 @@ export class AgentsApiClient {
           normalizedNetwork, // Use network from 402 response, not this.chain
           amountMicroUsdc, // Pass atomic units directly for accurate payment
           undefined, // RPC URL (optional, will use defaults)
+          feePayer, // Pass fee payer from 402 response (for Solana transactions)
         );
         paymentHeader = signature; // Store the payment signature
         // Store computed transaction hash for Base transactions (backend should return actual hash)
