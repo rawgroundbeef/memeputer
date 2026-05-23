@@ -1,37 +1,88 @@
 {
-  "name": "memeputer-monorepo",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Monorepo for Memeputer packages",
+  "name": "memeputer",
+  "version": "2.0.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "Official TypeScript SDK + CLI for the Memeputer agent chat platform.",
+  "homepage": "https://docs.memeputer.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rawgroundbeef/memeputer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rawgroundbeef/memeputer/issues"
+  },
+  "keywords": [
+    "memeputer",
+    "solana",
+    "x402",
+    "meteora",
+    "sdk",
+    "agent",
+    "chat"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
+  "bin": {
+    "memeputer": "./dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "changeset": "changeset",
-    "version": "changeset version",
-    "release": "pnpm build && changeset publish",
-    "clean": "pnpm -r clean",
-    "link:cli": "pnpm --filter memeputer build && cd packages/cli && pnpm link --global",
-    "prepare": "husky",
-    "generate-solana-wallet": "tsx scripts/generate-solana-wallet.ts",
-    "generate-base-wallet": "tsx scripts/generate-base-wallet.ts"
+    "build": "tsup && node scripts/post-build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm build && vitest run --passWithNoTests",
+    "pack:dry": "npm pack --dry-run --json ."
+  },
+  "peerDependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@openfacilitator/sdk": "1.0.0",
+    "@solana/web3.js": "^1.98.0",
+    "socket.io-client": "^4.8.3"
+  },
+  "peerDependenciesMeta": {
+    "socket.io-client": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "bs58": "^6.0.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.0",
-    "@solana/web3.js": "^1.98.4",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
-    "ethers": "^6.13.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.2.6",
-    "prettier": "^3.3.0",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.0"
+    "@coral-xyz/anchor": "^0.32.1",
+    "@openfacilitator/sdk": "1.0.0",
+    "@solana/web3.js": "^1.98.0",
+    "@types/node": "^22.0.0",
+    "socket.io-client": "^4.8.3",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=22",
+    "pnpm": ">=10.16"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@10.16.0"
 }

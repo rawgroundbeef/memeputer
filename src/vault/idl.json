@@ -1,0 +1,931 @@
+{
+  "address": "HBpnezcpn854wGbUCDdUNj6xG83rngyQrA4Pj9FH1UX9",
+  "metadata": {
+    "name": "memeputer_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Memeputer creator-fee vault (DBC + DAMM v2 unified claim)"
+  },
+  "instructions": [
+    {
+      "name": "claim_creator_reward",
+      "discriminator": [
+        174,
+        210,
+        14,
+        57,
+        187,
+        18,
+        230,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The creator — MUST be FeeLedger.creator_wallet (constraint-enforced",
+            "below). This is the spine of D-05 (on-chain user-signed claim)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "docs": [
+            "Singleton PlatformConfig — read for claim_fee_bps + platform_fee_recipient."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_ledger",
+          "docs": [
+            "FeeLedger PDA for this mint — mutated to record claimed += claimable.",
+            "The `creator` Signer is gated against `fee_ledger.creator_wallet` per D-05."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_vault",
+          "docs": [
+            "FeeVault PDA — source of the SOL transfers. PDA-signed below via",
+            "invoke_signed inside `system_program::transfer` CpiContext."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_recipient",
+          "docs": [
+            "Platform fee recipient — must match PlatformConfig.platform_fee_recipient."
+          ],
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "Where the NET proceeds go (per D-07: user controls this — typically",
+            "defaults to creator at SDK layer, but creator may direct elsewhere)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "The mint this claim is for — used only as a PDA seed."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "recipient",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "claim_meteora_fees",
+      "discriminator": [
+        21,
+        207,
+        178,
+        64,
+        130,
+        211,
+        31,
+        100
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Operator wallet — pays tx fees."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "SPL token mint (PDA seed only)."
+          ]
+        },
+        {
+          "name": "fee_ledger",
+          "docs": [
+            "FeeLedger PDA — mutated to credit `accrued += sol_claimed` and set",
+            "`last_swept_at`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_vault",
+          "docs": [
+            "FeeVault PDA — receives the claimed SOL from Meteora."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "meteora_pool",
+          "docs": [
+            "The Meteora pool account — UncheckedAccount because we read raw",
+            "bytes (specifically `VirtualPool.is_migrated`) for on-chain",
+            "dispatch. Meteora validates this account inside the CPI."
+          ]
+        },
+        {
+          "name": "meteora_program",
+          "docs": [
+            "The Meteora program to CPI into — MUST be METEORA_DBC_PROGRAM_ID",
+            "(pre-graduation) OR METEORA_DAMM_V2_PROGRAM_ID (post-migration),",
+            "matching the dispatch decision below."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_fee_ledger",
+      "discriminator": [
+        115,
+        39,
+        32,
+        149,
+        229,
+        131,
+        247,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Operator (launch wallet) — pays rent for the new accounts."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "The token mint this ledger tracks fees for."
+          ]
+        },
+        {
+          "name": "fee_ledger",
+          "docs": [
+            "FeeLedger PDA — created here, owned by this program."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_vault",
+          "docs": [
+            "FeeVault PDA — manually created via system_program::create_account in",
+            "the handler. We use `UncheckedAccount` rather than `SystemAccount`",
+            "because Anchor 0.32 forbids `init` on `SystemAccount`.",
+            "post-create ownership = system program; payload = zero-byte lamport holder."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "creator_wallet",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "init_platform_config",
+      "discriminator": [
+        101,
+        52,
+        47,
+        49,
+        156,
+        16,
+        32,
+        118
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "claim_fee_bps",
+          "type": "u64"
+        },
+        {
+          "name": "platform_fee_recipient",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "transfer_upgrade_authority",
+      "discriminator": [
+        82,
+        52,
+        117,
+        53,
+        56,
+        196,
+        253,
+        219
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_platform_config",
+      "discriminator": [
+        195,
+        60,
+        76,
+        129,
+        146,
+        45,
+        67,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_claim_fee_bps",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "new_platform_fee_recipient",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "FeeLedger",
+      "discriminator": [
+        224,
+        34,
+        151,
+        237,
+        107,
+        206,
+        212,
+        70
+      ]
+    },
+    {
+      "name": "PlatformConfig",
+      "discriminator": [
+        160,
+        78,
+        128,
+        0,
+        248,
+        83,
+        230,
+        160
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "FeesClaimed",
+      "discriminator": [
+        22,
+        104,
+        110,
+        222,
+        38,
+        157,
+        14,
+        62
+      ]
+    },
+    {
+      "name": "MeteoraFeesClaimed",
+      "discriminator": [
+        224,
+        90,
+        101,
+        71,
+        221,
+        90,
+        131,
+        174
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NothingToClaim",
+      "msg": "Nothing to claim — claimable balance is zero"
+    },
+    {
+      "code": 6001,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6002,
+      "name": "InsufficientVaultBalance",
+      "msg": "Insufficient SOL in vault — cannot withdraw below rent-exempt minimum"
+    },
+    {
+      "code": 6003,
+      "name": "Unauthorized",
+      "msg": "Unauthorized — caller is not the configured authority"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidFeeRecipient",
+      "msg": "Invalid fee recipient account — must match PlatformConfig.platform_fee_recipient"
+    },
+    {
+      "code": 6005,
+      "name": "LedgerNotInitialized",
+      "msg": "Fee ledger has not been initialized for this mint"
+    },
+    {
+      "code": 6006,
+      "name": "WrongCreator",
+      "msg": "Wrong creator — signer is not FeeLedger.creator_wallet"
+    },
+    {
+      "code": 6007,
+      "name": "ClaimBelowMinimum",
+      "msg": "Claimable amount is below the minimum threshold"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidPoolAccountData",
+      "msg": "Meteora pool account data is too small to deserialize"
+    }
+  ],
+  "types": [
+    {
+      "name": "FeeLedger",
+      "docs": [
+        "Per-mint accrual ledger.",
+        "",
+        "One FeeLedger PDA exists per launched coin (seeds: [b\"fee_ledger\", mint]).",
+        "It records cumulative SOL accrued from Meteora sweeps and cumulative SOL",
+        "claimed by the creator. The (accrued - claimed) delta is the creator's",
+        "current claimable balance.",
+        "",
+        "Ported (with reductions) from `hey_curve/state/fee_ledger.rs`:",
+        "- DROP: `platform_fees_accumulated` / `platform_fees_claimed` (Memeputer",
+        "accrues 100% to creator and deducts `claim_fee_bps` at user-claim",
+        "time, not at sweep time)",
+        "- DROP: `creator_claimed[100]` / `last_creator_claim_at[100]` arrays",
+        "(Memeputer is single-recipient per D-03)",
+        "- DROP: `swept: u8` (no 90-day expiry sweep — deferred to v2)",
+        "- DROP: `trade_count` (analytics, not v1)",
+        "- ADD: `creator_wallet: Pubkey` (single recipient; mutable per D-03)",
+        "- ADD: `reserved: [u8; 64]` (forward-compat for v2 features)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "Canonical PDA bump (SEC-01 — stored so claim/sweep ix don't recompute)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "The SPL token mint this ledger tracks fees for."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creator_wallet",
+            "docs": [
+              "Phase 6.2 forward-compat: `creator_wallet` MUST stay mutable here so",
+              "a future `update_creator_wallet` instruction can swap it without a",
+              "program redeploy. Do NOT add an `#[account(constraint = ...)]` that",
+              "freezes this field; do NOT mark it `#[account(init_if_needed)]`-only.",
+              "Per D-03 (CONTEXT.md). See Open Question #4 (RESOLVED — deferred to",
+              "Phase 6.2 design for timelock semantics)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "accrued",
+            "docs": [
+              "Total Meteora trading fees accrued (lamports). Monotonically increasing.",
+              "Credited by `claim_meteora_fees` (sweep-side)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "docs": [
+              "Total claimed by creator (lamports). Monotonically increasing.",
+              "Incremented by `claim_creator_reward` (user-signed)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_swept_at",
+            "docs": [
+              "Last time a sweep deposited fees (i64 unix seconds; 0 = never)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_claim_at",
+            "docs": [
+              "Last time creator claimed (i64 unix seconds; 0 = never)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Reserved for v2 features (multi-recipient, vesting, expiry, per-room",
+              "claim_fee_bps override). Pad to 64 bytes so v2 migrations can add",
+              "fields without requiring a redeploy."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeesClaimed",
+      "docs": [
+        "Emitted by `claim_creator_reward` after a successful user-signed claim.",
+        "",
+        "Memeputer has a single claim type (creator), so we don't carry a",
+        "`claim_type` enum like hey_curve does."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The token mint whose FeeLedger was debited."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "claimer",
+            "docs": [
+              "The signer (must == FeeLedger.creator_wallet by constraint)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "docs": [
+              "The wallet that received the NET proceeds (defaults to creator, but",
+              "per D-07 the user may direct the net to any address)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "gross",
+            "docs": [
+              "Lamports of the gross claim (= accrued - claimed BEFORE this call)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "claim_fee",
+            "docs": [
+              "Lamports deducted as platform claim_fee (gross * claim_fee_bps / 10000)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "docs": [
+              "Lamports paid to `recipient` (= gross - claim_fee)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Clock::get() timestamp at emit time."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MeteoraFeesClaimed",
+      "docs": [
+        "Emitted by `claim_meteora_fees` after a successful sweep deposit.",
+        "",
+        "Memeputer is SOL-quoted only (DBC quote = wSOL → unwrapped to SOL on",
+        "deposit), so we don't carry a `token_claimed` field like hey_curve does."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The token mint whose FeeLedger was credited."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "meteora_pool",
+            "docs": [
+              "The Meteora pool the fees came from (DBC pre-graduation, or DAMM v2",
+              "position post-graduation)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "sol_claimed",
+            "docs": [
+              "Lamports deposited into FeeVault by this sweep."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Clock::get() timestamp at emit time."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformConfig",
+      "docs": [
+        "Singleton platform config (seeds: [b\"platform_config\"]).",
+        "",
+        "Ported (with reductions) from `hey_curve/state/platform_config.rs`:",
+        "- KEEP: `bump`, `authority` (= upgrade authority), `claim_fee_bps`,",
+        "`platform_fee_recipient`.",
+        "- DROP: every bonding-curve field (`bonding_threshold_sol`,",
+        "`max_buy_sol`, `max_holding_bps`, `creator_sell_lock_seconds`,",
+        "`creation_fee_lamports`, `creator_fee_bps`, `migration_fee_lamports`,",
+        "`max_creator_fee_bps`). Memeputer uses Meteora DBC as the curve, so",
+        "these are configured at coin-launch time via the Meteora SDK, not",
+        "here.",
+        "- DROP: three-tier authority fields (`admin`, `operator`, `frozen`).",
+        "v1 uses a single `authority` field. Multi-sig + freeze flag deferred.",
+        "- ADD: `reserved: [u8; 64]` for v2 forward-compat."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "Canonical PDA bump (SEC-01)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Upgrade authority — the only key that can call",
+              "`update_platform_config` or `transfer_upgrade_authority`. Note that",
+              "this is the program-level config authority, NOT the BPF loader's",
+              "program-upgrade authority (which is set via `solana program deploy",
+              "--keypair $UPGRADE_AUTHORITY_KEYPAIR` at deploy time)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "claim_fee_bps",
+            "docs": [
+              "Claim fee in basis points deducted from `claim_creator_reward`",
+              "proceeds (default 100 = 1%; capped at 1000 = 10%). Per D-06: GLOBAL,",
+              "not per-room."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "platform_fee_recipient",
+            "docs": [
+              "Single platform fee recipient wallet — receives the `claim_fee`",
+              "deduction from every `claim_creator_reward` call."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Reserved for v2 features (e.g., per-room claim_fee_bps override,",
+              "multi-recipient platform fees). Pad to 64 bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
